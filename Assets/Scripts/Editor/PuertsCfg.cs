@@ -1,0 +1,32 @@
+using System;
+using System.Collections.Generic;
+using Puerts;
+
+namespace LLMAgent.Editor
+{
+    /// <summary>
+    /// PuerTS configuration for generating C# type declarations (index.d.ts).
+    /// Run "Tools > PuerTS > Generate index.d.ts" in Unity Editor to regenerate.
+    /// </summary>
+    [Configure]
+    public class PuertsCfg
+    {
+        /// <summary>
+        /// Types that will have d.ts declarations generated.
+        /// These are the C# types referenced from TypeScript via the CS namespace.
+        /// </summary>
+        [Typing]
+        static IEnumerable<Type> Typings
+        {
+            get
+            {
+                return new List<Type>()
+                {
+                    typeof(HttpBridge),
+                    typeof(Action<string, bool>),
+                    typeof(Action<string>),
+                };
+            }
+        }
+    }
+}
