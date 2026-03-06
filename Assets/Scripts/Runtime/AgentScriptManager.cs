@@ -1,13 +1,16 @@
 using System;
 using UnityEngine;
-using UnityEditor;
 using Puerts;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
-namespace LLMAgent.Editor
+namespace LLMAgent
 {
     /// <summary>
     /// Manages PuerTS ScriptEnv lifecycle and bridges C# calls to TypeScript.
-    /// Uses EditorApplication.update to tick ScriptEnv for async JS microtask processing.
+    /// Editor: uses EditorApplication.update to tick ScriptEnv.
+    /// Runtime: uses a hidden MonoBehaviour Update() to tick ScriptEnv.
     /// </summary>
     public class AgentScriptManager : IDisposable
     {
@@ -25,6 +28,23 @@ namespace LLMAgent.Editor
         private Func<bool> onIsConfigured;
 
         private const string EntryModule = "main.mjs";
+
+#if !UNITY_EDITOR
+        /// <summary>
+        /// Hidden MonoBehaviour singleton for Runtime ScriptEnv ticking.
+        /// </summary>
+        private class ScriptEnvTicker : MonoBehaviour
+        {
+            public Action onTick;
+
+            private void Update()
+            {
+                onTick?.Invoke();
+            }
+        }
+
+        private ScriptEnvTicker ticker;
+#endif
 
         /// <summary>
         /// Whether the TS module has been successfully loaded.
@@ -69,7 +89,7 @@ namespace LLMAgent.Editor
                 isInitialized = true;
                 lastError = null;
 
-                // Start ticking ScriptEnv via EditorApplication.update
+                // Start ticking ScriptEnv
                 StartTicking();
 
                 Debug.Log("[AgentScriptManager] ScriptEnv initialized and module loaded successfully.");
@@ -83,28 +103,43 @@ namespace LLMAgent.Editor
         }
 
         /// <summary>
-        /// Register on EditorApplication.update to periodically tick the ScriptEnv,
-        /// which processes JS microtasks (Promise resolution, async callbacks, etc.).
+        /// Start ticking the ScriptEnv to process JS microtasks.
         /// </summary>
         private void StartTicking()
         {
             if (isTicking) return;
             isTicking = true;
+#if UNITY_EDITOR
             EditorApplication.update += Tick;
+#else
+            var go = new GameObject("[ScriptEnvTicker]");
+            go.hideFlags = HideFlags.HideAndDontSave;
+            UnityEngine.Object.DontDestroyOnLoad(go);
+            ticker = go.AddComponent<ScriptEnvTicker>();
+            ticker.onTick = Tick;
+#endif
         }
 
         /// <summary>
-        /// Unregister from EditorApplication.update.
+        /// Stop ticking.
         /// </summary>
         private void StopTicking()
         {
             if (!isTicking) return;
             isTicking = false;
+#if UNITY_EDITOR
             EditorApplication.update -= Tick;
+#else
+            if (ticker != null)
+            {
+                UnityEngine.Object.Destroy(ticker.gameObject);
+                ticker = null;
+            }
+#endif
         }
 
         /// <summary>
-        /// Called every editor frame to process pending JS microtasks.
+        /// Called every frame to process pending JS microtasks.
         /// </summary>
         private void Tick()
         {
@@ -145,11 +180,7 @@ namespace LLMAgent.Editor
 
         /// <summary>
         /// Send a message to the TS side asynchronously via callback pattern.
-        /// The C# Action callback is passed directly to TS and invoked when done.
-        /// ScriptEnv is ticked by EditorApplication.update, so this is non-blocking.
         /// </summary>
-        /// <param name="message">User input text</param>
-        /// <param name="onResponse">Callback: (response, isError)</param>
         public void SendMessageAsync(string message, Action<string, bool> onResponse)
         {
             if (!isInitialized || onMessageReceived == null)

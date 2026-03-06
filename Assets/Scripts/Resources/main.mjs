@@ -4623,7 +4623,7 @@ async function fetchImpl(input, init) {
   const headersJson = JSON.stringify(headers);
   return new Promise((resolve, reject) => {
     try {
-      CS.LLMAgent.Editor.HttpBridge.SendRequestAsync(
+      CS.LLMAgent.HttpBridge.SendRequestAsync(
         url,
         method,
         headersJson,
@@ -4645,7 +4645,7 @@ async function fetchImpl(input, init) {
         }
       );
     } catch (error) {
-      reject(new TypeError(`Network request failed: ${error.message || error}`));
+      reject(new TypeError(`Network request failed: ${error.stack || error}`));
     }
   });
 }

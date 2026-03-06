@@ -22,7 +22,7 @@ namespace LLMAgent.Editor
             {
                 return new List<Type>()
                 {
-                    typeof(HttpBridge),
+                    typeof(LLMAgent.HttpBridge),
                     typeof(Action<string, bool>),
                     typeof(Action<string>),
                     typeof(Func<string, bool>),

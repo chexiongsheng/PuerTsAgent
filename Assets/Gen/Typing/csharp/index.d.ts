@@ -317,7 +317,7 @@
         Invoke?: (arg1: T1, arg2: T2, arg3: T3) => TResult;
         }
     }
-    namespace LLMAgent.Editor {
+    namespace LLMAgent {
         class HttpBridge extends System.Object
         {
             protected [__keep_incompatibility]: never;

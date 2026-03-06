@@ -1,21 +1,25 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
-using UnityEditor;
 using UnityEngine.Networking;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
-namespace LLMAgent.Editor
+namespace LLMAgent
 {
     /// <summary>
     /// HTTP bridge for TypeScript fetch polyfill.
-    /// Uses UnityWebRequest + EditorApplication.update polling to ensure
-    /// callbacks are always invoked on the main thread (required by V8 isolate).
+    /// In Editor: uses EditorApplication.update polling.
+    /// In Runtime: uses a hidden MonoBehaviour with coroutines.
+    /// Callbacks are always invoked on the main thread (required by V8 isolate).
     /// </summary>
     public static class HttpBridge
     {
         /// <summary>
-        /// Represents a pending HTTP request being polled each editor frame.
+        /// Represents a pending HTTP request being polled each frame.
         /// </summary>
         private class PendingRequest
         {
@@ -27,16 +31,40 @@ namespace LLMAgent.Editor
         private static readonly List<PendingRequest> pendingRequests = new List<PendingRequest>();
         private static bool isPolling = false;
 
+#if !UNITY_EDITOR
+        /// <summary>
+        /// Hidden MonoBehaviour singleton for Runtime coroutine/update driving.
+        /// </summary>
+        private class HttpBridgeRunner : MonoBehaviour
+        {
+            private static HttpBridgeRunner _instance;
+            public static HttpBridgeRunner Instance
+            {
+                get
+                {
+                    if (_instance == null)
+                    {
+                        var go = new GameObject("[HttpBridgeRunner]");
+                        go.hideFlags = HideFlags.HideAndDontSave;
+                        UnityEngine.Object.DontDestroyOnLoad(go);
+                        _instance = go.AddComponent<HttpBridgeRunner>();
+                    }
+                    return _instance;
+                }
+            }
+
+            private void Update()
+            {
+                PollPendingRequests();
+            }
+        }
+#endif
+
         /// <summary>
         /// Send an HTTP request asynchronously using UnityWebRequest.
         /// The callback is invoked on the main thread when the request completes.
         /// Called from TypeScript fetch polyfill.
         /// </summary>
-        /// <param name="url">Request URL</param>
-        /// <param name="method">HTTP method (GET, POST, etc.)</param>
-        /// <param name="headersJson">JSON-encoded headers object</param>
-        /// <param name="body">Request body (for POST/PUT/PATCH)</param>
-        /// <param name="callback">Callback invoked with the JSON response string on main thread</param>
         public static void SendRequestAsync(string url, string method, string headersJson, string body, Action<string> callback)
         {
             try
@@ -119,13 +147,19 @@ namespace LLMAgent.Editor
         }
 
         /// <summary>
-        /// Start polling via EditorApplication.update if not already.
+        /// Start polling if not already.
+        /// Editor: EditorApplication.update; Runtime: MonoBehaviour.Update via hidden runner.
         /// </summary>
         private static void StartPolling()
         {
             if (isPolling) return;
             isPolling = true;
+#if UNITY_EDITOR
             EditorApplication.update += PollPendingRequests;
+#else
+            // Accessing Instance ensures the runner GameObject is created and Update() runs
+            var _ = HttpBridgeRunner.Instance;
+#endif
         }
 
         /// <summary>
@@ -135,15 +169,20 @@ namespace LLMAgent.Editor
         {
             if (!isPolling) return;
             isPolling = false;
+#if UNITY_EDITOR
             EditorApplication.update -= PollPendingRequests;
+#endif
+            // In Runtime, the runner Update() will simply find no pending requests and no-op
         }
 
         /// <summary>
-        /// Called every editor frame to check if any pending requests have completed.
+        /// Called every frame to check if any pending requests have completed.
         /// All callbacks are invoked on the main thread.
         /// </summary>
         private static void PollPendingRequests()
         {
+            if (pendingRequests.Count == 0) return;
+
             // Iterate in reverse so we can safely remove completed entries
             for (int i = pendingRequests.Count - 1; i >= 0; i--)
             {
