@@ -52,19 +52,19 @@ export function onMessageReceived(message: string, callback: CS.System.Action$2<
 
     if (!getIsConfigured()) {
         // Immediately callback with error
-        callback('[Agent] Not configured. Please set your API key in Settings.', false);
+        callback.Invoke!('[Agent] Not configured. Please set your API key in Settings.', false);
         return;
     }
 
     // Fire and forget - the async operation will call back when done
     sendMessage(message)
         .then((response: string) => {
-            callback(response, false);
+            callback.Invoke!(response, false);
         })
         .catch((error: any) => {
             const errorMsg = `[Agent] Error: ${error.message || String(error)}`;
             console.error(errorMsg);
-            callback(errorMsg, true);
+            callback.Invoke!(errorMsg, true);
         });
 }
 

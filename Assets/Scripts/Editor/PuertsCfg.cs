@@ -25,6 +25,9 @@ namespace LLMAgent.Editor
                     typeof(HttpBridge),
                     typeof(Action<string, bool>),
                     typeof(Action<string>),
+                    typeof(Func<string, bool>),
+                    typeof(Func<string, bool, int>),
+                    typeof(Func<string>),
                 };
             }
         }

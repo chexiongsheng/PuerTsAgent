@@ -17,6 +17,14 @@
         {
             protected [__keep_incompatibility]: never;
         }
+        class ValueType extends System.Object
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        class Void extends System.ValueType
+        {
+            protected [__keep_incompatibility]: never;
+        }
         class String extends System.Object implements System.ICloneable, System.IComparable, System.IComparable$1<string>, System.IConvertible, System.Collections.Generic.IEnumerable$1<number>, System.Collections.IEnumerable, System.IEquatable$1<string>
         {
             protected [__keep_incompatibility]: never;
@@ -32,10 +40,6 @@
         }
         interface IConvertible
         {
-        }
-        class ValueType extends System.Object
-        {
-            protected [__keep_incompatibility]: never;
         }
         class Char extends System.ValueType implements System.IComparable, System.IComparable$1<number>, System.IConvertible, System.IEquatable$1<number>
         {
@@ -54,6 +58,11 @@
         Invoke?: (...args:any[]) => any;
         }
         var MulticastDelegate: { new (func: (...args:any[]) => any): MulticastDelegate; }
+        interface Action$1<T>
+        { 
+        (obj: T) : void; 
+        Invoke?: (obj: T) => void;
+        }
         class Boolean extends System.ValueType implements System.IComparable, System.IComparable$1<boolean>, System.IConvertible, System.IEquatable$1<boolean>
         {
             protected [__keep_incompatibility]: never;
@@ -62,10 +71,6 @@
         { 
         (arg1: T1, arg2: T2) : void; 
         Invoke?: (arg1: T1, arg2: T2) => void;
-        }
-        class Void extends System.ValueType
-        {
-            protected [__keep_incompatibility]: never;
         }
         interface IAsyncResult
         {
@@ -80,10 +85,30 @@
         {
             protected [__keep_incompatibility]: never;
         }
-        interface Action$1<T>
+        interface Func$2<T, TResult>
         { 
-        (obj: T) : void; 
-        Invoke?: (obj: T) => void;
+        (arg: T) : TResult; 
+        Invoke?: (arg: T) => TResult;
+        }
+        class Int32 extends System.ValueType implements System.IFormattable, System.ISpanFormattable, System.IComparable, System.IComparable$1<number>, System.IConvertible, System.IEquatable$1<number>
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        interface IFormattable
+        {
+        }
+        interface ISpanFormattable
+        {
+        }
+        interface Func$3<T1, T2, TResult>
+        { 
+        (arg1: T1, arg2: T2) : TResult; 
+        Invoke?: (arg1: T1, arg2: T2) => TResult;
+        }
+        interface Func$1<TResult>
+        { 
+        () : TResult; 
+        Invoke?: () => TResult;
         }
         class Type extends System.Reflection.MemberInfo implements System.Runtime.InteropServices._MemberInfo, System.Runtime.InteropServices._Type, System.Reflection.ICustomAttributeProvider, System.Reflection.IReflect
         {
@@ -269,16 +294,6 @@
         {
             protected [__keep_incompatibility]: never;
         }
-        interface IFormattable
-        {
-        }
-        class Int32 extends System.ValueType implements System.IFormattable, System.ISpanFormattable, System.IComparable, System.IComparable$1<number>, System.IConvertible, System.IEquatable$1<number>
-        {
-            protected [__keep_incompatibility]: never;
-        }
-        interface ISpanFormattable
-        {
-        }
         class Attribute extends System.Object implements System.Runtime.InteropServices._Attribute
         {
             protected [__keep_incompatibility]: never;
@@ -296,11 +311,6 @@
         interface IFormatProvider
         {
         }
-        interface Func$2<T, TResult>
-        { 
-        (arg: T) : TResult; 
-        Invoke?: (arg: T) => TResult;
-        }
         interface Func$4<T1, T2, T3, TResult>
         { 
         (arg1: T1, arg2: T2, arg3: T3) : TResult; 
@@ -311,15 +321,7 @@
         class HttpBridge extends System.Object
         {
             protected [__keep_incompatibility]: never;
-            public static SendRequest ($url: string, $method: string, $headersJson: string, $body: string) : string
-        }
-        class AgentCallbackBridge extends System.Object
-        {
-            protected [__keep_incompatibility]: never;
-            public static RegisterCallback ($callback: System.Action$2<string, boolean>) : string
-            public static OnAgentResponse ($callbackId: string, $response: string, $isError: boolean) : void
-            public static IsCompleted ($callbackId: string) : boolean
-            public static ClearAll () : void
+            public static SendRequestAsync ($url: string, $method: string, $headersJson: string, $body: string, $callback: System.Action$1<string>) : void
         }
     }
     namespace System.Collections.Generic {

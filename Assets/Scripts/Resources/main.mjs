@@ -4621,25 +4621,33 @@ async function fetchImpl(input, init) {
     throw new DOMException("The operation was aborted.", "AbortError");
   }
   const headersJson = JSON.stringify(headers);
-  try {
-    const responseJson = CS.LLMAgent.Editor.HttpBridge.SendRequest(
-      url,
-      method,
-      headersJson,
-      body || ""
-    );
-    const responseData = JSON.parse(responseJson);
-    const responseHeaders = new FetchHeaders(responseData.headers || {});
-    return new FetchResponse(
-      responseData.body || "",
-      responseData.status || 0,
-      responseData.statusText || "",
-      responseHeaders,
-      url
-    );
-  } catch (error) {
-    throw new TypeError(`Network request failed: ${error.message || error}`);
-  }
+  return new Promise((resolve, reject) => {
+    try {
+      CS.LLMAgent.Editor.HttpBridge.SendRequestAsync(
+        url,
+        method,
+        headersJson,
+        body || "",
+        (responseJson) => {
+          try {
+            const responseData = JSON.parse(responseJson);
+            const responseHeaders = new FetchHeaders(responseData.headers || {});
+            resolve(new FetchResponse(
+              responseData.body || "",
+              responseData.status || 0,
+              responseData.statusText || "",
+              responseHeaders,
+              url
+            ));
+          } catch (parseError) {
+            reject(new TypeError(`Failed to parse response: ${parseError.message || parseError}`));
+          }
+        }
+      );
+    } catch (error) {
+      reject(new TypeError(`Network request failed: ${error.message || error}`));
+    }
+  });
 }
 __name(fetchImpl, "fetchImpl");
 function installFetchPolyfill() {
@@ -17683,15 +17691,15 @@ __name(configureAgent, "configureAgent");
 function onMessageReceived(message, callback) {
   console.log(`[Agent] User said: ${message}`);
   if (!getIsConfigured()) {
-    callback("[Agent] Not configured. Please set your API key in Settings.", false);
+    callback.Invoke("[Agent] Not configured. Please set your API key in Settings.", false);
     return;
   }
   sendMessage(message).then((response) => {
-    callback(response, false);
+    callback.Invoke(response, false);
   }).catch((error) => {
     const errorMsg = `[Agent] Error: ${error.message || String(error)}`;
     console.error(errorMsg);
-    callback(errorMsg, true);
+    callback.Invoke(errorMsg, true);
   });
 }
 __name(onMessageReceived, "onMessageReceived");

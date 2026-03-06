@@ -809,16 +809,25 @@ namespace LLMAgent.Editor
             // Add user message
             messages.Add(new ChatMessage { Text = text, IsUser = true, Timestamp = timestamp });
 
-            // Get response from TS
+            // Get response from TS asynchronously
             if (scriptManager != null && scriptManager.IsInitialized)
             {
                 isWaitingForResponse = true;
+                shouldScrollToBottom = true;
                 Repaint();
 
-                string response = scriptManager.SendMessage(text);
-
-                isWaitingForResponse = false;
-                messages.Add(new ChatMessage { Text = response, IsUser = false, Timestamp = DateTime.Now.ToString("HH:mm") });
+                scriptManager.SendMessageAsync(text, (response, isError) =>
+                {
+                    isWaitingForResponse = false;
+                    messages.Add(new ChatMessage
+                    {
+                        Text = response,
+                        IsUser = false,
+                        Timestamp = DateTime.Now.ToString("HH:mm")
+                    });
+                    shouldScrollToBottom = true;
+                    Repaint();
+                });
             }
             else
             {
@@ -828,9 +837,8 @@ namespace LLMAgent.Editor
                     IsUser = false,
                     Timestamp = DateTime.Now.ToString("HH:mm")
                 });
+                shouldScrollToBottom = true;
             }
-
-            shouldScrollToBottom = true;
         }
 
         #endregion

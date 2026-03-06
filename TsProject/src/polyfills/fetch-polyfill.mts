@@ -1,6 +1,6 @@
 /**
  * Fetch polyfill for PuerTS V8 environment.
- * Bridges to C# HttpBridge to perform actual HTTP requests.
+ * Bridges to C# HttpBridge.SendRequestAsync for truly async HTTP requests.
  */
 import { ReadableStream as PolyfillReadableStream } from 'web-streams-polyfill';
 
@@ -136,7 +136,6 @@ class FetchResponse {
     }
 
     async blob(): Promise<any> {
-        // Minimal blob implementation
         const text = this._bodyText;
         return {
             text: async () => text,
@@ -161,7 +160,8 @@ class FetchResponse {
 }
 
 /**
- * The actual fetch implementation that calls C# HttpBridge.
+ * The actual fetch implementation that calls C# HttpBridge.SendRequestAsync.
+ * Returns a genuine Promise that resolves asynchronously when C# callback fires.
  */
 async function fetchImpl(
     input: string | URL | { url: string; method?: string; headers?: any; body?: any },
@@ -226,30 +226,38 @@ async function fetchImpl(
     // Serialize headers to JSON string for C# bridge
     const headersJson = JSON.stringify(headers);
 
-    try {
-        // Call C# HttpBridge.SendRequest(url, method, headersJson, body)
-        // Returns a JSON string: { "status": 200, "statusText": "OK", "headers": {...}, "body": "..." }
-        const responseJson: string = CS.LLMAgent.Editor.HttpBridge.SendRequest(
-            url,
-            method,
-            headersJson,
-            body || ''
-        );
+    // Return a Promise that resolves when C# async callback fires
+    return new Promise<FetchResponse>((resolve, reject) => {
+        try {
+            // Call C# HttpBridge.SendRequestAsync(url, method, headersJson, body, callback)
+            // The callback receives the JSON response string asynchronously
+            CS.LLMAgent.Editor.HttpBridge.SendRequestAsync(
+                url,
+                method,
+                headersJson,
+                body || '',
+                (responseJson: string) => {
+                    try {
+                        const responseData = JSON.parse(responseJson);
 
-        const responseData = JSON.parse(responseJson);
+                        const responseHeaders = new FetchHeaders(responseData.headers || {});
 
-        const responseHeaders = new FetchHeaders(responseData.headers || {});
-
-        return new FetchResponse(
-            responseData.body || '',
-            responseData.status || 0,
-            responseData.statusText || '',
-            responseHeaders,
-            url
-        );
-    } catch (error: any) {
-        throw new TypeError(`Network request failed: ${error.message || error}`);
-    }
+                        resolve(new FetchResponse(
+                            responseData.body || '',
+                            responseData.status || 0,
+                            responseData.statusText || '',
+                            responseHeaders,
+                            url
+                        ));
+                    } catch (parseError: any) {
+                        reject(new TypeError(`Failed to parse response: ${parseError.message || parseError}`));
+                    }
+                }
+            );
+        } catch (error: any) {
+            reject(new TypeError(`Network request failed: ${error.message || error}`));
+        }
+    });
 }
 
 /**

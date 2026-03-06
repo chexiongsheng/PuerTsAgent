@@ -1,23 +1,25 @@
 using System;
 using UnityEngine;
+using UnityEditor;
 using Puerts;
 
 namespace LLMAgent.Editor
 {
     /// <summary>
     /// Manages PuerTS ScriptEnv lifecycle and bridges C# calls to TypeScript.
-    /// Supports both sync and async message handling for LLM Agent.
+    /// Uses EditorApplication.update to tick ScriptEnv for async JS microtask processing.
     /// </summary>
     public class AgentScriptManager : IDisposable
     {
         private ScriptEnv scriptEnv;
         private bool isInitialized;
         private string lastError;
+        private bool isTicking;
 
         // TS function delegates
         private Func<string, string, string, string, string> configureAgent;
-        private Action<string, Action<string, bool>> onMessageReceived;  // (message, callback) -> void, async with callback
-        private Func<string, string> onMessageSync;        // Sync echo for testing
+        private Action<string, Action<string, bool>> onMessageReceived;
+        private Func<string, string> onMessageSync;
         private Action onClearHistory;
         private Func<int> onGetHistoryLength;
         private Func<bool> onIsConfigured;
@@ -66,6 +68,10 @@ namespace LLMAgent.Editor
 
                 isInitialized = true;
                 lastError = null;
+
+                // Start ticking ScriptEnv via EditorApplication.update
+                StartTicking();
+
                 Debug.Log("[AgentScriptManager] ScriptEnv initialized and module loaded successfully.");
             }
             catch (Exception ex)
@@ -73,6 +79,45 @@ namespace LLMAgent.Editor
                 lastError = $"[AgentScriptManager] Failed to initialize: {ex.Message}";
                 Debug.LogError(lastError);
                 isInitialized = false;
+            }
+        }
+
+        /// <summary>
+        /// Register on EditorApplication.update to periodically tick the ScriptEnv,
+        /// which processes JS microtasks (Promise resolution, async callbacks, etc.).
+        /// </summary>
+        private void StartTicking()
+        {
+            if (isTicking) return;
+            isTicking = true;
+            EditorApplication.update += Tick;
+        }
+
+        /// <summary>
+        /// Unregister from EditorApplication.update.
+        /// </summary>
+        private void StopTicking()
+        {
+            if (!isTicking) return;
+            isTicking = false;
+            EditorApplication.update -= Tick;
+        }
+
+        /// <summary>
+        /// Called every editor frame to process pending JS microtasks.
+        /// </summary>
+        private void Tick()
+        {
+            if (scriptEnv != null)
+            {
+                try
+                {
+                    scriptEnv.Tick();
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[AgentScriptManager] Tick error: {ex.Message}");
+                }
             }
         }
 
@@ -101,6 +146,7 @@ namespace LLMAgent.Editor
         /// <summary>
         /// Send a message to the TS side asynchronously via callback pattern.
         /// The C# Action callback is passed directly to TS and invoked when done.
+        /// ScriptEnv is ticked by EditorApplication.update, so this is non-blocking.
         /// </summary>
         /// <param name="message">User input text</param>
         /// <param name="onResponse">Callback: (response, isError)</param>
@@ -114,28 +160,10 @@ namespace LLMAgent.Editor
 
             try
             {
-                bool completed = false;
-
-                // Pass the C# callback directly to TS side
-                Action<string, bool> wrappedCallback = (response, isError) =>
+                onMessageReceived(message, (response, isError) =>
                 {
                     onResponse?.Invoke(response, isError);
-                    completed = true;
-                };
-
-                onMessageReceived(message, wrappedCallback);
-
-                // Tick the ScriptEnv to process JS microtasks (Promise resolution)
-                // Since our fetch is synchronous, the Promise chain should resolve
-                // within a few ticks.
-                for (int i = 0; i < 100; i++)
-                {
-                    if (completed)
-                        break;
-
-                    scriptEnv.Tick();
-                    System.Threading.Thread.Sleep(10);
-                }
+                });
             }
             catch (Exception ex)
             {
@@ -143,33 +171,6 @@ namespace LLMAgent.Editor
                 Debug.LogError(err);
                 onResponse?.Invoke(err, true);
             }
-        }
-
-        /// <summary>
-        /// Send a message synchronously and wait for the response.
-        /// </summary>
-        public string SendMessage(string message)
-        {
-            if (!isInitialized || onMessageReceived == null)
-            {
-                return "[AgentScriptManager] Not initialized. Cannot send message.";
-            }
-
-            string result = null;
-            bool completed = false;
-
-            SendMessageAsync(message, (response, isError) =>
-            {
-                result = response;
-                completed = true;
-            });
-
-            if (completed && result != null)
-            {
-                return result;
-            }
-
-            return result ?? "[AgentScriptManager] Timeout waiting for response.";
         }
 
         /// <summary>
@@ -231,6 +232,8 @@ namespace LLMAgent.Editor
         /// </summary>
         public void Dispose()
         {
+            StopTicking();
+
             configureAgent = null;
             onMessageReceived = null;
             onMessageSync = null;

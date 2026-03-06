@@ -1,113 +1,256 @@
 using System;
 using System.Collections.Generic;
-using System.Net.Http;
 using System.Text;
 using UnityEngine;
+using UnityEditor;
+using UnityEngine.Networking;
 
 namespace LLMAgent.Editor
 {
     /// <summary>
     /// HTTP bridge for TypeScript fetch polyfill.
-    /// Called from TS side via CS.LLMAgent.Editor.HttpBridge.SendRequest().
-    /// Uses System.Net.Http.HttpClient for synchronous HTTP requests.
+    /// Uses UnityWebRequest + EditorApplication.update polling to ensure
+    /// callbacks are always invoked on the main thread (required by V8 isolate).
     /// </summary>
     public static class HttpBridge
     {
-        private static readonly HttpClient client = new HttpClient();
-
-        static HttpBridge()
+        /// <summary>
+        /// Represents a pending HTTP request being polled each editor frame.
+        /// </summary>
+        private class PendingRequest
         {
-            // Set a reasonable timeout
-            client.Timeout = TimeSpan.FromSeconds(120);
+            public UnityWebRequestAsyncOperation operation;
+            public Action<string> callback;
+            public string url;
         }
 
+        private static readonly List<PendingRequest> pendingRequests = new List<PendingRequest>();
+        private static bool isPolling = false;
+
         /// <summary>
-        /// Send an HTTP request synchronously and return a JSON-encoded response.
+        /// Send an HTTP request asynchronously using UnityWebRequest.
+        /// The callback is invoked on the main thread when the request completes.
         /// Called from TypeScript fetch polyfill.
         /// </summary>
         /// <param name="url">Request URL</param>
         /// <param name="method">HTTP method (GET, POST, etc.)</param>
         /// <param name="headersJson">JSON-encoded headers object</param>
         /// <param name="body">Request body (for POST/PUT/PATCH)</param>
-        /// <returns>JSON string: { "status": int, "statusText": string, "headers": {}, "body": string }</returns>
-        public static string SendRequest(string url, string method, string headersJson, string body)
+        /// <param name="callback">Callback invoked with the JSON response string on main thread</param>
+        public static void SendRequestAsync(string url, string method, string headersJson, string body, Action<string> callback)
         {
             try
             {
-                var request = new HttpRequestMessage(new HttpMethod(method), url);
+                UnityWebRequest request;
 
-                // Parse and set headers
-                if (!string.IsNullOrEmpty(headersJson) && headersJson != "{}")
+                // Create request based on method
+                var upperMethod = method.ToUpperInvariant();
+                if (upperMethod == "GET")
                 {
-                    var headers = JsonUtility.FromJson<HeadersWrapper>(
-                        WrapHeadersForUnityJson(headersJson)
-                    );
-
-                    // Since Unity's JsonUtility is limited, parse manually
-                    SetRequestHeaders(request, headersJson);
+                    request = UnityWebRequest.Get(url);
                 }
-
-                // Set body for methods that support it
-                if (!string.IsNullOrEmpty(body) && (method == "POST" || method == "PUT" || method == "PATCH"))
+                else if (upperMethod == "POST" || upperMethod == "PUT" || upperMethod == "PATCH")
                 {
+                    byte[] bodyBytes = null;
+                    if (!string.IsNullOrEmpty(body))
+                    {
+                        bodyBytes = Encoding.UTF8.GetBytes(body);
+                    }
+
+                    request = new UnityWebRequest(url, upperMethod);
+                    if (bodyBytes != null)
+                    {
+                        request.uploadHandler = new UploadHandlerRaw(bodyBytes);
+                    }
+                    request.downloadHandler = new DownloadHandlerBuffer();
+
+                    // Set content type
                     string contentType = "application/json";
-                    // Try to extract content-type from headers
                     var parsedHeaders = ParseHeadersJson(headersJson);
                     if (parsedHeaders.TryGetValue("content-type", out string ct))
                     {
                         contentType = ct;
                     }
-                    request.Content = new StringContent(body, Encoding.UTF8, contentType);
+                    request.SetRequestHeader("Content-Type", contentType);
                 }
-
-                // Send request synchronously
-                var response = client.SendAsync(request).GetAwaiter().GetResult();
-
-                // Read response body
-                string responseBody = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-
-                // Build response headers
-                var responseHeaders = new Dictionary<string, string>();
-                foreach (var header in response.Headers)
+                else if (upperMethod == "DELETE")
                 {
-                    responseHeaders[header.Key.ToLower()] = string.Join(", ", header.Value);
+                    request = UnityWebRequest.Delete(url);
+                    request.downloadHandler = new DownloadHandlerBuffer();
                 }
-                if (response.Content?.Headers != null)
+                else if (upperMethod == "HEAD")
                 {
-                    foreach (var header in response.Content.Headers)
-                    {
-                        responseHeaders[header.Key.ToLower()] = string.Join(", ", header.Value);
-                    }
+                    request = UnityWebRequest.Head(url);
                 }
-
-                // Build response JSON
-                var sb = new StringBuilder();
-                sb.Append("{");
-                sb.Append($"\"status\":{(int)response.StatusCode},");
-                sb.Append($"\"statusText\":\"{EscapeJsonString(response.ReasonPhrase ?? "")}\",");
-                sb.Append("\"headers\":{");
-
-                bool first = true;
-                foreach (var kv in responseHeaders)
+                else
                 {
-                    if (!first) sb.Append(",");
-                    sb.Append($"\"{EscapeJsonString(kv.Key)}\":\"{EscapeJsonString(kv.Value)}\"");
-                    first = false;
+                    request = new UnityWebRequest(url, upperMethod);
+                    request.downloadHandler = new DownloadHandlerBuffer();
                 }
 
-                sb.Append("},");
-                sb.Append($"\"body\":{ToJsonStringLiteral(responseBody)}");
-                sb.Append("}");
+                // Set custom headers
+                if (!string.IsNullOrEmpty(headersJson) && headersJson != "{}")
+                {
+                    SetRequestHeaders(request, headersJson);
+                }
 
-                return sb.ToString();
+                // Set timeout
+                request.timeout = 120;
+
+                // Send the request (non-blocking)
+                var operation = request.SendWebRequest();
+
+                // Register for polling
+                var pending = new PendingRequest
+                {
+                    operation = operation,
+                    callback = callback,
+                    url = url
+                };
+
+                pendingRequests.Add(pending);
+                StartPolling();
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[HttpBridge] Request failed: {ex.Message}");
-
-                // Return error response
-                return $"{{\"status\":0,\"statusText\":\"{EscapeJsonString(ex.Message)}\",\"headers\":{{}},\"body\":\"\"}}";
+                Debug.LogError($"[HttpBridge] Request setup failed: {ex.Message}");
+                callback?.Invoke($"{{\"status\":0,\"statusText\":\"{EscapeJsonString(ex.Message)}\",\"headers\":{{}},\"body\":\"\"}}");
             }
+        }
+
+        /// <summary>
+        /// Start polling via EditorApplication.update if not already.
+        /// </summary>
+        private static void StartPolling()
+        {
+            if (isPolling) return;
+            isPolling = true;
+            EditorApplication.update += PollPendingRequests;
+        }
+
+        /// <summary>
+        /// Stop polling when no more pending requests.
+        /// </summary>
+        private static void StopPolling()
+        {
+            if (!isPolling) return;
+            isPolling = false;
+            EditorApplication.update -= PollPendingRequests;
+        }
+
+        /// <summary>
+        /// Called every editor frame to check if any pending requests have completed.
+        /// All callbacks are invoked on the main thread.
+        /// </summary>
+        private static void PollPendingRequests()
+        {
+            // Iterate in reverse so we can safely remove completed entries
+            for (int i = pendingRequests.Count - 1; i >= 0; i--)
+            {
+                var pending = pendingRequests[i];
+
+                if (!pending.operation.isDone)
+                    continue;
+
+                // Remove from list first
+                pendingRequests.RemoveAt(i);
+
+                // Process the completed request on the main thread
+                try
+                {
+                    var request = pending.operation.webRequest;
+
+                    if (request.result == UnityWebRequest.Result.ConnectionError ||
+                        request.result == UnityWebRequest.Result.ProtocolError ||
+                        request.result == UnityWebRequest.Result.DataProcessingError)
+                    {
+                        // For protocol errors, we still have status code and possibly a body
+                        if (request.result == UnityWebRequest.Result.ProtocolError)
+                        {
+                            string responseBody = request.downloadHandler?.text ?? "";
+                            var responseHeaders = BuildResponseHeaders(request);
+
+                            var sb = new StringBuilder();
+                            sb.Append("{");
+                            sb.Append($"\"status\":{(int)request.responseCode},");
+                            sb.Append($"\"statusText\":\"{EscapeJsonString(request.error ?? "")}\",");
+                            AppendHeaders(sb, responseHeaders);
+                            sb.Append($"\"body\":{ToJsonStringLiteral(responseBody)}");
+                            sb.Append("}");
+
+                            pending.callback?.Invoke(sb.ToString());
+                        }
+                        else
+                        {
+                            Debug.LogError($"[HttpBridge] Request failed: {request.error}");
+                            pending.callback?.Invoke($"{{\"status\":0,\"statusText\":\"{EscapeJsonString(request.error ?? "Unknown error")}\",\"headers\":{{}},\"body\":\"\"}}");
+                        }
+                    }
+                    else
+                    {
+                        // Success
+                        string responseBody = request.downloadHandler?.text ?? "";
+                        var responseHeaders = BuildResponseHeaders(request);
+
+                        var sb = new StringBuilder();
+                        sb.Append("{");
+                        sb.Append($"\"status\":{(int)request.responseCode},");
+                        sb.Append($"\"statusText\":\"OK\",");
+                        AppendHeaders(sb, responseHeaders);
+                        sb.Append($"\"body\":{ToJsonStringLiteral(responseBody)}");
+                        sb.Append("}");
+
+                        pending.callback?.Invoke(sb.ToString());
+                    }
+
+                    // Dispose the UnityWebRequest
+                    request.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[HttpBridge] Error processing response: {ex.Message}");
+                    pending.callback?.Invoke($"{{\"status\":0,\"statusText\":\"{EscapeJsonString(ex.Message)}\",\"headers\":{{}},\"body\":\"\"}}");
+                }
+            }
+
+            // Stop polling if no more pending requests
+            if (pendingRequests.Count == 0)
+            {
+                StopPolling();
+            }
+        }
+
+        /// <summary>
+        /// Build response headers dictionary from UnityWebRequest.
+        /// </summary>
+        private static Dictionary<string, string> BuildResponseHeaders(UnityWebRequest request)
+        {
+            var headers = new Dictionary<string, string>();
+            var responseHeaders = request.GetResponseHeaders();
+            if (responseHeaders != null)
+            {
+                foreach (var kv in responseHeaders)
+                {
+                    headers[kv.Key.ToLower()] = kv.Value;
+                }
+            }
+            return headers;
+        }
+
+        /// <summary>
+        /// Append headers JSON object to a StringBuilder.
+        /// </summary>
+        private static void AppendHeaders(StringBuilder sb, Dictionary<string, string> headers)
+        {
+            sb.Append("\"headers\":{");
+            bool first = true;
+            foreach (var kv in headers)
+            {
+                if (!first) sb.Append(",");
+                sb.Append($"\"{EscapeJsonString(kv.Key)}\":\"{EscapeJsonString(kv.Value)}\"");
+                first = false;
+            }
+            sb.Append("},");
         }
 
         /// <summary>
@@ -122,7 +265,6 @@ namespace LLMAgent.Editor
 
             try
             {
-                // Simple JSON object parser for flat key-value pairs
                 json = json.Trim();
                 if (json.StartsWith("{")) json = json.Substring(1);
                 if (json.EndsWith("}")) json = json.Substring(0, json.Length - 1);
@@ -130,21 +272,17 @@ namespace LLMAgent.Editor
                 int i = 0;
                 while (i < json.Length)
                 {
-                    // Skip whitespace and commas
                     while (i < json.Length && (json[i] == ' ' || json[i] == ',' || json[i] == '\n' || json[i] == '\r' || json[i] == '\t'))
                         i++;
 
                     if (i >= json.Length) break;
 
-                    // Parse key
                     string key = ParseJsonString(json, ref i);
                     if (key == null) break;
 
-                    // Skip colon
                     while (i < json.Length && (json[i] == ' ' || json[i] == ':'))
                         i++;
 
-                    // Parse value
                     string value = ParseJsonString(json, ref i);
                     if (value == null) break;
 
@@ -198,20 +336,21 @@ namespace LLMAgent.Editor
             return sb.ToString();
         }
 
-        private static void SetRequestHeaders(HttpRequestMessage request, string headersJson)
+        private static void SetRequestHeaders(UnityWebRequest request, string headersJson)
         {
             var headers = ParseHeadersJson(headersJson);
             foreach (var kv in headers)
             {
                 string key = kv.Key.ToLower();
 
-                // Content headers must be set on Content, not on request.Headers
-                if (key == "content-type" || key == "content-length" || key == "content-encoding")
+                // Skip headers that UnityWebRequest manages internally
+                if (key == "content-type" || key == "content-length" || key == "content-encoding"
+                    || key == "accept-encoding" || key == "host" || key == "connection")
                     continue;
 
                 try
                 {
-                    request.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+                    request.SetRequestHeader(kv.Key, kv.Value);
                 }
                 catch (Exception)
                 {
@@ -247,24 +386,10 @@ namespace LLMAgent.Editor
             return sb.ToString();
         }
 
-        /// <summary>
-        /// Convert a string to a JSON string literal (with quotes and escaping).
-        /// </summary>
         private static string ToJsonStringLiteral(string str)
         {
             if (str == null) return "\"\"";
             return $"\"{EscapeJsonString(str)}\"";
-        }
-
-        private static string WrapHeadersForUnityJson(string json)
-        {
-            return $"{{\"data\":{json}}}";
-        }
-
-        [Serializable]
-        private class HeadersWrapper
-        {
-            public string data;
         }
     }
 }
