@@ -4645,7 +4645,7 @@ async function fetchImpl(input, init) {
         }
       );
     } catch (error) {
-      reject(new TypeError(`Network request failed: ${error.stack || error}`));
+      reject(new TypeError(`Network request failed: ${error.message || error}`));
     }
   });
 }
