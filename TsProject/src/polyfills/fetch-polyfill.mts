@@ -231,7 +231,7 @@ async function fetchImpl(
         try {
             // Call C# HttpBridge.SendRequestAsync(url, method, headersJson, body, callback)
             // The callback receives the JSON response string asynchronously
-            CS.LLMAgent.Editor.HttpBridge.SendRequestAsync(
+            CS.LLMAgent.HttpBridge.SendRequestAsync(
                 url,
                 method,
                 headersJson,
