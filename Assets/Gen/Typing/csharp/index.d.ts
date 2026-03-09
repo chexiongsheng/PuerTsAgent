@@ -333,6 +333,11 @@
             public static GetRecentLogs ($count: number, $logType: string) : string
             public static GetLogSummary () : string
         }
+        class ScreenCaptureBridge extends System.Object
+        {
+            protected [__keep_incompatibility]: never;
+            public static CaptureScreenAsync ($maxWidth: number, $maxHeight: number, $callback: System.Action$1<string>) : void
+        }
     }
     namespace System.Collections.Generic {
         interface IEnumerable$1<T> extends System.Collections.IEnumerable

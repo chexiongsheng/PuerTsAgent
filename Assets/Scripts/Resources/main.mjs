@@ -17677,6 +17677,71 @@ function createUnityLogTools() {
 }
 __name(createUnityLogTools, "createUnityLogTools");
 
+// src/tools/screenshot-tool.mts
+function createScreenshotTools() {
+  return {
+    /**
+     * Capture the current Unity game screen.
+     */
+    captureScreenshot: tool({
+      description: "Capture a screenshot of the current Unity game view. Returns a base64-encoded PNG image of the screen. Use this tool when you need to see what is currently displayed in the game, diagnose visual issues, check UI layout, or analyze the game state visually. The image will be resized to fit within the specified max dimensions to reduce token usage.",
+      parameters: external_exports.object({
+        maxWidth: external_exports.number().int().min(64).max(1920).default(512).describe(
+          "Maximum width of the captured image in pixels (64-1920, default 512). Lower values reduce token cost but also reduce detail."
+        ),
+        maxHeight: external_exports.number().int().min(64).max(1080).default(512).describe(
+          "Maximum height of the captured image in pixels (64-1080, default 512). Lower values reduce token cost but also reduce detail."
+        )
+      }),
+      execute: /* @__PURE__ */ __name(async ({ maxWidth, maxHeight }) => {
+        try {
+          const resultJson = await captureScreenPromise(maxWidth, maxHeight);
+          const result = JSON.parse(resultJson);
+          if (!result.success) {
+            return {
+              success: false,
+              message: `Screenshot capture failed: ${result.error || "Unknown error"}`
+            };
+          }
+          return {
+            success: true,
+            message: `Screenshot captured successfully (${result.width}x${result.height}).`,
+            image: {
+              type: "image",
+              mimeType: "image/png",
+              base64: result.base64,
+              width: result.width,
+              height: result.height
+            }
+          };
+        } catch (error) {
+          return {
+            success: false,
+            message: `Screenshot capture failed: ${error.message || error}`
+          };
+        }
+      }, "execute")
+    })
+  };
+}
+__name(createScreenshotTools, "createScreenshotTools");
+function captureScreenPromise(maxWidth, maxHeight) {
+  return new Promise((resolve, reject) => {
+    try {
+      CS.LLMAgent.ScreenCaptureBridge.CaptureScreenAsync(
+        maxWidth,
+        maxHeight,
+        (resultJson) => {
+          resolve(resultJson);
+        }
+      );
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+__name(captureScreenPromise, "captureScreenPromise");
+
 // src/agent/agent-core.mts
 var DEFAULT_CONFIG = {
   apiKey: "",
@@ -17712,7 +17777,10 @@ async function sendMessage(userMessage) {
       // Note: fetch is picked up from globalThis.fetch (our polyfill)
     });
     const model = provider(currentConfig.model || "gpt-4o-mini");
-    const tools = createUnityLogTools();
+    const tools = {
+      ...createUnityLogTools(),
+      ...createScreenshotTools()
+    };
     const result = await generateText({
       model,
       system: currentConfig.systemPrompt,
