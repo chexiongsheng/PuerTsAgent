@@ -17,6 +17,7 @@ import {
 } from './agent/agent-core.mjs';
 
 // Install polyfills before anything else (order matters: streams -> fetch)
+// Note: atob/btoa polyfill is injected via esbuild banner (must run before AI SDK module-level code)
 installStreamsPolyfill();
 installFetchPolyfill();
 

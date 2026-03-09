@@ -1,9 +1,20 @@
 /**
  * Screenshot Tool for AI Agent
  * Allows the LLM to capture and analyze the Unity game screen.
+ * Uses experimental_toToolResultContent to send the image as multi-modal content
+ * so the LLM can actually "see" the screenshot (similar to image_url in OpenAI API).
  */
 import { tool } from 'ai';
 import { z } from 'zod';
+
+/** Shape of a successful capture result. */
+interface ScreenshotResult {
+    success: boolean;
+    message: string;
+    base64?: string;
+    width?: number;
+    height?: number;
+}
 
 /**
  * Create screenshot tools that the agent can use to capture the Unity screen.
@@ -16,7 +27,7 @@ export function createScreenshotTools() {
         captureScreenshot: tool({
             description:
                 'Capture a screenshot of the current Unity game view. ' +
-                'Returns a base64-encoded PNG image of the screen. ' +
+                'Returns a PNG image of the screen that you can visually analyze. ' +
                 'Use this tool when you need to see what is currently displayed in the game, ' +
                 'diagnose visual issues, check UI layout, or analyze the game state visually. ' +
                 'The image will be resized to fit within the specified max dimensions to reduce token usage.',
@@ -42,7 +53,7 @@ export function createScreenshotTools() {
                         'Lower values reduce token cost but also reduce detail.'
                     ),
             }),
-            execute: async ({ maxWidth, maxHeight }) => {
+            execute: async ({ maxWidth, maxHeight }): Promise<ScreenshotResult> => {
                 try {
                     const resultJson = await captureScreenPromise(maxWidth, maxHeight);
                     const result = JSON.parse(resultJson);
@@ -57,13 +68,9 @@ export function createScreenshotTools() {
                     return {
                         success: true,
                         message: `Screenshot captured successfully (${result.width}x${result.height}).`,
-                        image: {
-                            type: 'image' as const,
-                            mimeType: 'image/png',
-                            base64: result.base64,
-                            width: result.width,
-                            height: result.height,
-                        },
+                        base64: result.base64,
+                        width: result.width,
+                        height: result.height,
                     };
                 } catch (error: any) {
                     return {
@@ -71,6 +78,22 @@ export function createScreenshotTools() {
                         message: `Screenshot capture failed: ${error.message || error}`,
                     };
                 }
+            },
+            // This is the key: convert the tool result into multi-modal content
+            // so the AI SDK sends the image as an actual image (like image_url)
+            // instead of just a JSON blob with base64 text.
+            experimental_toToolResultContent(result: ScreenshotResult) {
+                if (!result.success || !result.base64) {
+                    return [{ type: 'text' as const, text: result.message }];
+                }
+                return [
+                    { type: 'text' as const, text: result.message },
+                    {
+                        type: 'image' as const,
+                        data: result.base64,
+                        mimeType: 'image/png' as const,
+                    },
+                ];
             },
         }),
     };

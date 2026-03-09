@@ -1,5 +1,42 @@
 
 // === Early Polyfills (injected by esbuild banner) ===
+// atob / btoa — needed by AI SDK (reads them from globalThis at module-eval time)
+if (typeof globalThis.btoa !== 'function') {
+    var _b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    var _b64lookup = new Uint8Array(256);
+    for (var _i = 0; _i < _b64chars.length; _i++) _b64lookup[_b64chars.charCodeAt(_i)] = _i;
+    globalThis.btoa = function btoa(s) {
+        var len = s.length, r = '', i = 0;
+        while (i < len) {
+            var a = s.charCodeAt(i++) & 0xff;
+            if (i >= len) { r += _b64chars[a>>2] + _b64chars[(a&3)<<4] + '=='; break; }
+            var b = s.charCodeAt(i++) & 0xff;
+            if (i >= len) { r += _b64chars[a>>2] + _b64chars[((a&3)<<4)|(b>>4)] + _b64chars[(b&0xf)<<2] + '='; break; }
+            var c = s.charCodeAt(i++) & 0xff;
+            r += _b64chars[a>>2] + _b64chars[((a&3)<<4)|(b>>4)] + _b64chars[((b&0xf)<<2)|(c>>6)] + _b64chars[c&0x3f];
+        }
+        return r;
+    };
+    console.log('[Polyfill:Banner] btoa installed.');
+}
+if (typeof globalThis.atob !== 'function') {
+    var _b64chars2 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    var _b64lookup2 = new Uint8Array(256);
+    for (var _i2 = 0; _i2 < _b64chars2.length; _i2++) _b64lookup2[_b64chars2.charCodeAt(_i2)] = _i2;
+    globalThis.atob = function atob(base64) {
+        var s = base64.replace(/[s]/g, ''), len = s.length, r = '', i = 0;
+        while (i < len) {
+            var e1 = _b64lookup2[s.charCodeAt(i++)], e2 = _b64lookup2[s.charCodeAt(i++)];
+            var c3 = s.charCodeAt(i++), c4 = s.charCodeAt(i++);
+            var e3 = c3 === 61 ? 64 : _b64lookup2[c3], e4 = c4 === 61 ? 64 : _b64lookup2[c4];
+            r += String.fromCharCode((e1<<2)|(e2>>4));
+            if (e3 !== 64) r += String.fromCharCode(((e2&15)<<4)|(e3>>2));
+            if (e4 !== 64) r += String.fromCharCode(((e3&3)<<6)|e4);
+        }
+        return r;
+    };
+    console.log('[Polyfill:Banner] atob installed.');
+}
 if (typeof globalThis.URL === 'undefined') {
     class URLPolyfill {
         constructor(input, base) {
@@ -17684,7 +17721,7 @@ function createScreenshotTools() {
      * Capture the current Unity game screen.
      */
     captureScreenshot: tool({
-      description: "Capture a screenshot of the current Unity game view. Returns a base64-encoded PNG image of the screen. Use this tool when you need to see what is currently displayed in the game, diagnose visual issues, check UI layout, or analyze the game state visually. The image will be resized to fit within the specified max dimensions to reduce token usage.",
+      description: "Capture a screenshot of the current Unity game view. Returns a PNG image of the screen that you can visually analyze. Use this tool when you need to see what is currently displayed in the game, diagnose visual issues, check UI layout, or analyze the game state visually. The image will be resized to fit within the specified max dimensions to reduce token usage.",
       parameters: external_exports.object({
         maxWidth: external_exports.number().int().min(64).max(1920).default(512).describe(
           "Maximum width of the captured image in pixels (64-1920, default 512). Lower values reduce token cost but also reduce detail."
@@ -17706,13 +17743,9 @@ function createScreenshotTools() {
           return {
             success: true,
             message: `Screenshot captured successfully (${result.width}x${result.height}).`,
-            image: {
-              type: "image",
-              mimeType: "image/png",
-              base64: result.base64,
-              width: result.width,
-              height: result.height
-            }
+            base64: result.base64,
+            width: result.width,
+            height: result.height
           };
         } catch (error) {
           return {
@@ -17720,7 +17753,23 @@ function createScreenshotTools() {
             message: `Screenshot capture failed: ${error.message || error}`
           };
         }
-      }, "execute")
+      }, "execute"),
+      // This is the key: convert the tool result into multi-modal content
+      // so the AI SDK sends the image as an actual image (like image_url)
+      // instead of just a JSON blob with base64 text.
+      experimental_toToolResultContent(result) {
+        if (!result.success || !result.base64) {
+          return [{ type: "text", text: result.message }];
+        }
+        return [
+          { type: "text", text: result.message },
+          {
+            type: "image",
+            data: result.base64,
+            mimeType: "image/png"
+          }
+        ];
+      }
     })
   };
 }
@@ -17774,26 +17823,91 @@ async function sendMessage(userMessage) {
     const provider = createOpenAI({
       apiKey: currentConfig.apiKey,
       baseURL: currentConfig.baseURL
-      // Note: fetch is picked up from globalThis.fetch (our polyfill)
     });
     const model = provider(currentConfig.model || "gpt-4o-mini");
     const tools = {
       ...createUnityLogTools(),
       ...createScreenshotTools()
     };
-    const result = await generateText({
-      model,
-      system: currentConfig.systemPrompt,
-      messages: conversationHistory,
-      tools,
-      maxSteps: 5
-    });
-    const assistantMessage = result.text;
-    conversationHistory.push({
-      role: "assistant",
-      content: assistantMessage
-    });
-    return assistantMessage;
+    const MAX_STEPS = 5;
+    for (let step = 0; step < MAX_STEPS; step++) {
+      const result = await generateText({
+        model,
+        system: currentConfig.systemPrompt,
+        messages: conversationHistory,
+        tools,
+        maxSteps: 1
+        // single step — we manage the loop
+      });
+      const toolCalls = result.toolCalls;
+      const toolResults = result.toolResults;
+      if (toolCalls && toolCalls.length > 0 && toolResults && toolResults.length > 0) {
+        conversationHistory.push({
+          role: "assistant",
+          content: toolCalls.map((tc) => ({
+            type: "tool-call",
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            args: tc.args
+          }))
+        });
+        const toolResultParts = [];
+        const imageParts = [];
+        for (const tr2 of toolResults) {
+          const execResult = tr2.result;
+          if (tr2.toolName === "captureScreenshot" && execResult?.success && execResult?.base64) {
+            imageParts.push({
+              type: "image",
+              image: execResult.base64,
+              mimeType: "image/png"
+            });
+            toolResultParts.push({
+              type: "tool-result",
+              toolCallId: tr2.toolCallId,
+              toolName: tr2.toolName,
+              result: {
+                success: true,
+                message: execResult.message || `Screenshot captured (${execResult.width}x${execResult.height}).`,
+                width: execResult.width,
+                height: execResult.height
+              }
+            });
+          } else {
+            toolResultParts.push({
+              type: "tool-result",
+              toolCallId: tr2.toolCallId,
+              toolName: tr2.toolName,
+              result: execResult
+            });
+          }
+        }
+        conversationHistory.push({
+          role: "tool",
+          content: toolResultParts
+        });
+        if (imageParts.length > 0) {
+          console.log(`[Agent] Injecting ${imageParts.length} screenshot image(s) as user message`);
+          conversationHistory.push({
+            role: "user",
+            content: [
+              ...imageParts,
+              {
+                type: "text",
+                text: "Above is the screenshot I just captured. Please analyze it and respond to my earlier request."
+              }
+            ]
+          });
+        }
+        continue;
+      }
+      const assistantMessage = result.text;
+      conversationHistory.push({
+        role: "assistant",
+        content: assistantMessage
+      });
+      return assistantMessage;
+    }
+    return "[Agent] Reached maximum tool call steps. Please try again with a simpler request.";
   } catch (error) {
     const errorMsg = `[Agent] Error: ${error.message || String(error)}`;
     console.error(errorMsg);

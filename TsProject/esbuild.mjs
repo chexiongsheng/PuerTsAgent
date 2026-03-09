@@ -5,6 +5,43 @@ import { build } from 'esbuild';
 // before those lines run.
 const bannerCode = `
 // === Early Polyfills (injected by esbuild banner) ===
+// atob / btoa — needed by AI SDK (reads them from globalThis at module-eval time)
+if (typeof globalThis.btoa !== 'function') {
+    var _b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    var _b64lookup = new Uint8Array(256);
+    for (var _i = 0; _i < _b64chars.length; _i++) _b64lookup[_b64chars.charCodeAt(_i)] = _i;
+    globalThis.btoa = function btoa(s) {
+        var len = s.length, r = '', i = 0;
+        while (i < len) {
+            var a = s.charCodeAt(i++) & 0xff;
+            if (i >= len) { r += _b64chars[a>>2] + _b64chars[(a&3)<<4] + '=='; break; }
+            var b = s.charCodeAt(i++) & 0xff;
+            if (i >= len) { r += _b64chars[a>>2] + _b64chars[((a&3)<<4)|(b>>4)] + _b64chars[(b&0xf)<<2] + '='; break; }
+            var c = s.charCodeAt(i++) & 0xff;
+            r += _b64chars[a>>2] + _b64chars[((a&3)<<4)|(b>>4)] + _b64chars[((b&0xf)<<2)|(c>>6)] + _b64chars[c&0x3f];
+        }
+        return r;
+    };
+    console.log('[Polyfill:Banner] btoa installed.');
+}
+if (typeof globalThis.atob !== 'function') {
+    var _b64chars2 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    var _b64lookup2 = new Uint8Array(256);
+    for (var _i2 = 0; _i2 < _b64chars2.length; _i2++) _b64lookup2[_b64chars2.charCodeAt(_i2)] = _i2;
+    globalThis.atob = function atob(base64) {
+        var s = base64.replace(/[\s]/g, ''), len = s.length, r = '', i = 0;
+        while (i < len) {
+            var e1 = _b64lookup2[s.charCodeAt(i++)], e2 = _b64lookup2[s.charCodeAt(i++)];
+            var c3 = s.charCodeAt(i++), c4 = s.charCodeAt(i++);
+            var e3 = c3 === 61 ? 64 : _b64lookup2[c3], e4 = c4 === 61 ? 64 : _b64lookup2[c4];
+            r += String.fromCharCode((e1<<2)|(e2>>4));
+            if (e3 !== 64) r += String.fromCharCode(((e2&15)<<4)|(e3>>2));
+            if (e4 !== 64) r += String.fromCharCode(((e3&3)<<6)|e4);
+        }
+        return r;
+    };
+    console.log('[Polyfill:Banner] atob installed.');
+}
 if (typeof globalThis.URL === 'undefined') {
     class URLPolyfill {
         constructor(input, base) {
