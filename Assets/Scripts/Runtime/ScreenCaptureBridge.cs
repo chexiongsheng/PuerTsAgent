@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.IO;
 using UnityEngine;
 
 namespace LLMAgent
@@ -177,6 +178,21 @@ namespace LLMAgent
             }
 
             byte[] pngBytes = finalTex.EncodeToPNG();
+
+#if UNITY_EDITOR
+            // Save a debug copy to disk for inspection
+            try
+            {
+                string debugPath = Path.Combine(Application.dataPath, "..", "debug_screenshot.png");
+                File.WriteAllBytes(debugPath, pngBytes);
+                Debug.Log($"[ScreenCaptureBridge] Debug screenshot saved to: {Path.GetFullPath(debugPath)} ({finalWidth}x{finalHeight})");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[ScreenCaptureBridge] Failed to save debug screenshot: {ex.Message}");
+            }
+#endif
+
             string base64 = Convert.ToBase64String(pngBytes);
             UnityEngine.Object.Destroy(finalTex);
 
