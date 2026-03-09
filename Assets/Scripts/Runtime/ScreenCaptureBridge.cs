@@ -152,6 +152,20 @@ namespace LLMAgent
             UnityEngine.Object.DestroyImmediate(rt);
 
             byte[] pngBytes = tex.EncodeToPNG();
+#if UNITY_EDITOR
+            // Save a debug copy to disk for inspection
+            try
+            {
+                string debugPath = Path.Combine(Application.dataPath, "..", "debug_screenshot.png");
+                File.WriteAllBytes(debugPath, pngBytes);
+                Debug.Log($"[ScreenCaptureBridge] Debug screenshot saved to: {Path.GetFullPath(debugPath)} ({captureWidth}x{captureHeight})");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[ScreenCaptureBridge] Failed to save debug screenshot: {ex.Message}");
+            }
+#endif
+            Debug.Log($"[ScreenCaptureBridge] Processed screenshot: {captureWidth}x{captureHeight}, {pngBytes.Length} bytes");
             string base64 = Convert.ToBase64String(pngBytes);
             UnityEngine.Object.DestroyImmediate(tex);
 
@@ -192,8 +206,32 @@ namespace LLMAgent
                 Debug.LogWarning($"[ScreenCaptureBridge] Failed to save debug screenshot: {ex.Message}");
             }
 #endif
+            /*
+            // TEMP: Override with apple.png for testing vision capability
+            string testImagePath = Path.Combine(Application.dataPath, "..", "apple.png");
+            if (File.Exists(testImagePath))
+            {
+                byte[] testBytes = File.ReadAllBytes(testImagePath);
+                // Load into a temporary Texture2D to get actual dimensions
+                var tmpTex = new Texture2D(2, 2);
+                tmpTex.LoadImage(testBytes);
+                int testWidth = tmpTex.width;
+                int testHeight = tmpTex.height;
+                UnityEngine.Object.Destroy(tmpTex);
+
+                Debug.Log($"[ScreenCaptureBridge] TEMP: Returning apple.png instead of screenshot ({testWidth}x{testHeight}, {testBytes.Length} bytes)");
+                string testBase64 = Convert.ToBase64String(testBytes);
+                UnityEngine.Object.Destroy(finalTex);
+                return BuildSuccessJson(testBase64, testWidth, testHeight);
+            }
+            else
+            {
+                Debug.LogWarning($"[ScreenCaptureBridge] TEMP: apple.png not found at {testImagePath}, falling back to real screenshot");
+            }
+            */
 
             string base64 = Convert.ToBase64String(pngBytes);
+            Debug.Log($"[ScreenCaptureBridge] Processed screenshot: {finalWidth}x{finalHeight}, {pngBytes.Length} bytes");
             UnityEngine.Object.Destroy(finalTex);
 
             return BuildSuccessJson(base64, finalWidth, finalHeight);
