@@ -231,6 +231,7 @@ async function fetchImpl(
         try {
             // Call C# HttpBridge.SendRequestAsync(url, method, headersJson, body, callback)
             // The callback receives the JSON response string asynchronously
+            console.log(`[Polyfill] request: ${body}`);
             CS.LLMAgent.HttpBridge.SendRequestAsync(
                 url,
                 method,
@@ -238,6 +239,7 @@ async function fetchImpl(
                 body || '',
                 (responseJson: string) => {
                     try {
+                        console.log(`[Polyfill] response: ${responseJson}`);
                         const responseData = JSON.parse(responseJson);
 
                         const responseHeaders = new FetchHeaders(responseData.headers || {});

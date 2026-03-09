@@ -338,6 +338,14 @@
             protected [__keep_incompatibility]: never;
             public static CaptureScreenAsync ($maxWidth: number, $maxHeight: number, $callback: System.Action$1<string>) : void
         }
+        class TypeReflectionBridge extends System.Object
+        {
+            protected [__keep_incompatibility]: never;
+            public static GetAllNamespaces () : string
+            public static GetTypesInNamespaces ($namespacesComma: string) : string
+            public static GetTypeDetails ($typeNamesComma: string) : string
+            public static InvalidateCache () : void
+        }
     }
     namespace System.Collections.Generic {
         interface IEnumerable$1<T> extends System.Collections.IEnumerable

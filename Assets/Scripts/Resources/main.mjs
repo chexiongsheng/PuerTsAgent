@@ -4660,6 +4660,7 @@ async function fetchImpl(input, init) {
   const headersJson = JSON.stringify(headers);
   return new Promise((resolve, reject) => {
     try {
+      console.log(`[Polyfill] request: ${body}`);
       CS.LLMAgent.HttpBridge.SendRequestAsync(
         url,
         method,
@@ -4667,6 +4668,7 @@ async function fetchImpl(input, init) {
         body || "",
         (responseJson) => {
           try {
+            console.log(`[Polyfill] response: ${responseJson}`);
             const responseData = JSON.parse(responseJson);
             const responseHeaders = new FetchHeaders(responseData.headers || {});
             resolve(new FetchResponse(
@@ -17791,6 +17793,75 @@ function captureScreenPromise(maxWidth, maxHeight) {
 }
 __name(captureScreenPromise, "captureScreenPromise");
 
+// src/tools/type-reflection-tool.mts
+function createTypeReflectionTools() {
+  return {
+    /**
+     * Tool 1: List all C# namespaces available in the runtime.
+     */
+    listNamespaces: tool({
+      description: 'List all C# namespaces found across all loaded assemblies in the Unity runtime. Use this as the first step when exploring available C# APIs. The result is cached after the first call, so subsequent calls are fast. Returns a JSON object with a "namespaces" array of namespace name strings.',
+      parameters: external_exports.object({}),
+      execute: /* @__PURE__ */ __name(async () => {
+        try {
+          const json = CS.LLMAgent.TypeReflectionBridge.GetAllNamespaces();
+          return JSON.parse(json);
+        } catch (error) {
+          return {
+            success: false,
+            error: `Failed to list namespaces: ${error.message || error}`
+          };
+        }
+      }, "execute")
+    }),
+    /**
+     * Tool 2: List types in one or more namespaces (no member details).
+     */
+    listTypesInNamespace: tool({
+      description: "List all public types (classes, structs, enums, interfaces, delegates) under one or more C# namespaces. Returns type name, full name, and kind for each type. Does NOT return property/method details \u2013 use getTypeDetails for that. Pass one or more namespace names separated by commas.",
+      parameters: external_exports.object({
+        namespaces: external_exports.string().describe(
+          'Comma-separated namespace names to query, e.g. "UnityEngine,UnityEngine.UI". Must match exactly.'
+        )
+      }),
+      execute: /* @__PURE__ */ __name(async ({ namespaces }) => {
+        try {
+          const json = CS.LLMAgent.TypeReflectionBridge.GetTypesInNamespaces(namespaces);
+          return JSON.parse(json);
+        } catch (error) {
+          return {
+            success: false,
+            error: `Failed to list types: ${error.message || error}`
+          };
+        }
+      }, "execute")
+    }),
+    /**
+     * Tool 3: Get detailed signatures for one or more types.
+     */
+    getTypeDetails: tool({
+      description: 'Get detailed information about one or more C# types, including all public properties (with get/set), methods (with full parameter signatures), fields, implemented interfaces, base type, and enum values (for enums). Pass fully-qualified type names separated by commas, e.g. "UnityEngine.Transform,UnityEngine.GameObject".',
+      parameters: external_exports.object({
+        typeNames: external_exports.string().describe(
+          'Comma-separated fully-qualified type names, e.g. "UnityEngine.Transform,UnityEngine.GameObject".'
+        )
+      }),
+      execute: /* @__PURE__ */ __name(async ({ typeNames }) => {
+        try {
+          const json = CS.LLMAgent.TypeReflectionBridge.GetTypeDetails(typeNames);
+          return JSON.parse(json);
+        } catch (error) {
+          return {
+            success: false,
+            error: `Failed to get type details: ${error.message || error}`
+          };
+        }
+      }, "execute")
+    })
+  };
+}
+__name(createTypeReflectionTools, "createTypeReflectionTools");
+
 // src/agent/agent-core.mts
 var DEFAULT_CONFIG = {
   apiKey: "",
@@ -17827,7 +17898,8 @@ async function sendMessage(userMessage) {
     const model = provider(currentConfig.model || "gpt-4o-mini");
     const tools = {
       ...createUnityLogTools(),
-      ...createScreenshotTools()
+      ...createScreenshotTools(),
+      ...createTypeReflectionTools()
     };
     const MAX_STEPS = 5;
     for (let step = 0; step < MAX_STEPS; step++) {

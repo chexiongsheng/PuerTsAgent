@@ -6,6 +6,7 @@ import { generateText, type CoreMessage } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createUnityLogTools } from '../tools/unity-log-tool.mjs';
 import { createScreenshotTools } from '../tools/screenshot-tool.mjs';
+import { createTypeReflectionTools } from '../tools/type-reflection-tool.mjs';
 
 // Agent configuration interface
 export interface AgentConfig {
@@ -76,6 +77,7 @@ export async function sendMessage(userMessage: string): Promise<string> {
         const tools = {
             ...createUnityLogTools(),
             ...createScreenshotTools(),
+            ...createTypeReflectionTools(),
         };
 
         const MAX_STEPS = 5;
