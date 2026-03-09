@@ -63,6 +63,16 @@
         (obj: T) : void; 
         Invoke?: (obj: T) => void;
         }
+        class Int32 extends System.ValueType implements System.IFormattable, System.ISpanFormattable, System.IComparable, System.IComparable$1<number>, System.IConvertible, System.IEquatable$1<number>
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        interface IFormattable
+        {
+        }
+        interface ISpanFormattable
+        {
+        }
         class Boolean extends System.ValueType implements System.IComparable, System.IComparable$1<boolean>, System.IConvertible, System.IEquatable$1<boolean>
         {
             protected [__keep_incompatibility]: never;
@@ -89,16 +99,6 @@
         { 
         (arg: T) : TResult; 
         Invoke?: (arg: T) => TResult;
-        }
-        class Int32 extends System.ValueType implements System.IFormattable, System.ISpanFormattable, System.IComparable, System.IComparable$1<number>, System.IConvertible, System.IEquatable$1<number>
-        {
-            protected [__keep_incompatibility]: never;
-        }
-        interface IFormattable
-        {
-        }
-        interface ISpanFormattable
-        {
         }
         interface Func$3<T1, T2, TResult>
         { 
@@ -322,6 +322,16 @@
         {
             protected [__keep_incompatibility]: never;
             public static SendRequestAsync ($url: string, $method: string, $headersJson: string, $body: string, $callback: System.Action$1<string>) : void
+        }
+        class UnityLogBridge extends System.Object
+        {
+            protected [__keep_incompatibility]: never;
+            public static StartListening () : void
+            public static StopListening () : void
+            public static SetBufferSize ($size: number) : void
+            public static ClearLogs () : void
+            public static GetRecentLogs ($count: number, $logType: string) : string
+            public static GetLogSummary () : string
         }
     }
     namespace System.Collections.Generic {

@@ -4,6 +4,7 @@
  */
 import { generateText, type CoreMessage } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { createUnityLogTools } from '../tools/unity-log-tool.mjs';
 
 // Agent configuration interface
 export interface AgentConfig {
@@ -66,10 +67,15 @@ export async function sendMessage(userMessage: string): Promise<string> {
 
         const model = provider(currentConfig.model || 'gpt-4o-mini');
 
+        // Create tools for the agent
+        const tools = createUnityLogTools();
+
         const result = await generateText({
             model,
             system: currentConfig.systemPrompt,
             messages: conversationHistory,
+            tools,
+            maxSteps: 5,
         });
 
         const assistantMessage = result.text;

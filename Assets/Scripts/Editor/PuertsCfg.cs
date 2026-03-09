@@ -23,6 +23,7 @@ namespace LLMAgent.Editor
                 return new List<Type>()
                 {
                     typeof(LLMAgent.HttpBridge),
+                    typeof(LLMAgent.UnityLogBridge),
                     typeof(Action<string, bool>),
                     typeof(Action<string>),
                     typeof(Func<string, bool>),

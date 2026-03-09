@@ -20,6 +20,9 @@ import {
 installStreamsPolyfill();
 installFetchPolyfill();
 
+// Start capturing Unity logs for the agent's log tool
+CS.LLMAgent.UnityLogBridge.StartListening();
+
 console.log('[Agent] LLM Agent module loaded.');
 
 /**

@@ -14497,6 +14497,10 @@ var marker16 = `vercel.ai.error.${name16}`;
 var symbol16 = Symbol.for(marker16);
 var _a16;
 _a16 = symbol16;
+function tool(tool2) {
+  return tool2;
+}
+__name(tool, "tool");
 var ClientOrServerImplementationSchema = external_exports.object({
   name: external_exports.string(),
   version: external_exports.string()
@@ -15029,14 +15033,14 @@ function prepareTools({
   const toolChoice = mode.toolChoice;
   if (useLegacyFunctionCalling) {
     const openaiFunctions = [];
-    for (const tool of tools) {
-      if (tool.type === "provider-defined") {
-        toolWarnings.push({ type: "unsupported-tool", tool });
+    for (const tool2 of tools) {
+      if (tool2.type === "provider-defined") {
+        toolWarnings.push({ type: "unsupported-tool", tool: tool2 });
       } else {
         openaiFunctions.push({
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters
+          name: tool2.name,
+          description: tool2.description,
+          parameters: tool2.parameters
         });
       }
     }
@@ -15070,16 +15074,16 @@ function prepareTools({
     }
   }
   const openaiTools2 = [];
-  for (const tool of tools) {
-    if (tool.type === "provider-defined") {
-      toolWarnings.push({ type: "unsupported-tool", tool });
+  for (const tool2 of tools) {
+    if (tool2.type === "provider-defined") {
+      toolWarnings.push({ type: "unsupported-tool", tool: tool2 });
     } else {
       openaiTools2.push({
         type: "function",
         function: {
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters,
+          name: tool2.name,
+          description: tool2.description,
+          parameters: tool2.parameters,
           strict: structuredOutputs ? true : void 0
         }
       });
@@ -16677,33 +16681,33 @@ function prepareResponsesTools({
   }
   const toolChoice = mode.toolChoice;
   const openaiTools2 = [];
-  for (const tool of tools) {
-    switch (tool.type) {
+  for (const tool2 of tools) {
+    switch (tool2.type) {
       case "function":
         openaiTools2.push({
           type: "function",
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters,
+          name: tool2.name,
+          description: tool2.description,
+          parameters: tool2.parameters,
           strict: strict ? true : void 0
         });
         break;
       case "provider-defined":
-        switch (tool.id) {
+        switch (tool2.id) {
           case "openai.web_search_preview":
             openaiTools2.push({
               type: "web_search_preview",
-              search_context_size: tool.args.searchContextSize,
-              user_location: tool.args.userLocation
+              search_context_size: tool2.args.searchContextSize,
+              user_location: tool2.args.userLocation
             });
             break;
           default:
-            toolWarnings.push({ type: "unsupported-tool", tool });
+            toolWarnings.push({ type: "unsupported-tool", tool: tool2 });
             break;
         }
         break;
       default:
-        toolWarnings.push({ type: "unsupported-tool", tool });
+        toolWarnings.push({ type: "unsupported-tool", tool: tool2 });
         break;
     }
   }
@@ -17606,6 +17610,73 @@ var openai = createOpenAI({
   // strict for OpenAI API
 });
 
+// src/tools/unity-log-tool.mts
+function createUnityLogTools() {
+  return {
+    /**
+     * Get recent Unity console logs with optional filtering.
+     */
+    getUnityLogs: tool({
+      description: "Get recent Unity console logs. Use this tool to inspect Unity Editor/Runtime logs, including errors, warnings, and normal log messages. Useful for debugging issues, checking for errors, or monitoring application state.",
+      parameters: external_exports.object({
+        count: external_exports.number().int().min(1).max(50).default(20).describe("Number of recent log entries to retrieve (1-50, default 20)"),
+        logType: external_exports.enum(["all", "error", "warning", "log"]).default("all").describe(
+          'Filter by log type: "all" for all logs, "error" for errors and exceptions, "warning" for warnings, "log" for normal messages'
+        )
+      }),
+      execute: /* @__PURE__ */ __name(async ({ count, logType }) => {
+        try {
+          const logsJson = CS.LLMAgent.UnityLogBridge.GetRecentLogs(count, logType);
+          const logs = JSON.parse(logsJson);
+          if (logs.length === 0) {
+            return {
+              success: true,
+              message: `No ${logType === "all" ? "" : logType + " "}logs found.`,
+              logs: []
+            };
+          }
+          return {
+            success: true,
+            message: `Found ${logs.length} log entries.`,
+            logs
+          };
+        } catch (error) {
+          return {
+            success: false,
+            message: `Failed to retrieve logs: ${error.message || error}`,
+            logs: []
+          };
+        }
+      }, "execute")
+    }),
+    /**
+     * Get a summary of Unity log counts by type.
+     */
+    getUnityLogSummary: tool({
+      description: "Get a summary count of Unity console logs by type (errors, warnings, normal logs). Use this to quickly check if there are any errors or warnings without retrieving full log details.",
+      parameters: external_exports.object({}),
+      execute: /* @__PURE__ */ __name(async () => {
+        try {
+          const summaryJson = CS.LLMAgent.UnityLogBridge.GetLogSummary();
+          const summary = JSON.parse(summaryJson);
+          return {
+            success: true,
+            summary,
+            message: `Log summary: ${summary.error} errors, ${summary.warning} warnings, ${summary.log} info messages (${summary.total} total)`
+          };
+        } catch (error) {
+          return {
+            success: false,
+            summary: null,
+            message: `Failed to retrieve log summary: ${error.message || error}`
+          };
+        }
+      }, "execute")
+    })
+  };
+}
+__name(createUnityLogTools, "createUnityLogTools");
+
 // src/agent/agent-core.mts
 var DEFAULT_CONFIG = {
   apiKey: "",
@@ -17641,10 +17712,13 @@ async function sendMessage(userMessage) {
       // Note: fetch is picked up from globalThis.fetch (our polyfill)
     });
     const model = provider(currentConfig.model || "gpt-4o-mini");
+    const tools = createUnityLogTools();
     const result = await generateText({
       model,
       system: currentConfig.systemPrompt,
-      messages: conversationHistory
+      messages: conversationHistory,
+      tools,
+      maxSteps: 5
     });
     const assistantMessage = result.text;
     conversationHistory.push({
@@ -17678,6 +17752,7 @@ __name(getIsConfigured, "getIsConfigured");
 console.log("[Agent] LLM Agent initialized.");
 installStreamsPolyfill();
 installFetchPolyfill();
+CS.LLMAgent.UnityLogBridge.StartListening();
 console.log("[Agent] LLM Agent module loaded.");
 function configureAgent(apiKey, baseURL, model, systemPrompt) {
   return configure({
