@@ -56,10 +56,19 @@ if (typeof globalThis.URL === 'undefined') {
             this.protocol = ''; this.host = ''; this.hostname = '';
             this.port = ''; this.pathname = '/'; this.search = '';
             this.hash = ''; this.origin = ''; this.username = ''; this.password = '';
-            const dataProtoMatch = url.match(/^(data):/i);
-            if (dataProtoMatch) { this.protocol = dataProtoMatch[1].toLowerCase() + ':'; }
-            const protoMatch = url.match(/^([a-zA-Z]+):\\/\\//);
+            // Check for opaque URIs first (data:, blob:, javascript: etc — no "//")
+            const opaqueProtoMatch = url.match(/^([a-zA-Z][a-zA-Z0-9+\\-.]*):(?!\\/\\/)/);
+            if (opaqueProtoMatch) {
+                this.protocol = opaqueProtoMatch[1].toLowerCase() + ':';
+                this.pathname = url.slice(opaqueProtoMatch[0].length);
+                return; // opaque URI — no host/port parsing
+            }
+            const protoMatch = url.match(/^([a-zA-Z][a-zA-Z0-9+\\-.]*):\\/\\//);
             if (protoMatch) { this.protocol = protoMatch[1] + ':'; url = url.slice(protoMatch[0].length); }
+            else if (!base) {
+                // No valid protocol and no base URL — not a valid URL.
+                throw new TypeError('Invalid URL: ' + String(input));
+            }
             const hashIdx = url.indexOf('#');
             if (hashIdx !== -1) { this.hash = url.slice(hashIdx); url = url.slice(0, hashIdx); }
             const queryIdx = url.indexOf('?');

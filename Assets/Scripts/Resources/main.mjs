@@ -50,10 +50,19 @@ if (typeof globalThis.URL === 'undefined') {
             this.protocol = ''; this.host = ''; this.hostname = '';
             this.port = ''; this.pathname = '/'; this.search = '';
             this.hash = ''; this.origin = ''; this.username = ''; this.password = '';
-            const dataProtoMatch = url.match(/^(data):/i);
-            if (dataProtoMatch) { this.protocol = dataProtoMatch[1].toLowerCase() + ':'; }
-            const protoMatch = url.match(/^([a-zA-Z]+):\/\//);
+            // Check for opaque URIs first (data:, blob:, javascript: etc — no "//")
+            const opaqueProtoMatch = url.match(/^([a-zA-Z][a-zA-Z0-9+\-.]*):(?!\/\/)/);
+            if (opaqueProtoMatch) {
+                this.protocol = opaqueProtoMatch[1].toLowerCase() + ':';
+                this.pathname = url.slice(opaqueProtoMatch[0].length);
+                return; // opaque URI — no host/port parsing
+            }
+            const protoMatch = url.match(/^([a-zA-Z][a-zA-Z0-9+\-.]*):\/\//);
             if (protoMatch) { this.protocol = protoMatch[1] + ':'; url = url.slice(protoMatch[0].length); }
+            else if (!base) {
+                // No valid protocol and no base URL — not a valid URL.
+                throw new TypeError('Invalid URL: ' + String(input));
+            }
             const hashIdx = url.indexOf('#');
             if (hashIdx !== -1) { this.hash = url.slice(hashIdx); url = url.slice(0, hashIdx); }
             const queryIdx = url.indexOf('?');
@@ -4923,68 +4932,6 @@ var EventPolyfill = class {
     this.type = type;
   }
 };
-var URLPolyfill = class {
-  static {
-    __name(this, "URLPolyfill");
-  }
-  href;
-  protocol = "";
-  host = "";
-  hostname = "";
-  port = "";
-  pathname = "";
-  search = "";
-  hash = "";
-  origin = "";
-  username = "";
-  password = "";
-  constructor(input, base) {
-    let url2 = input;
-    if (base && !input.match(/^[a-zA-Z]+:\/\//)) {
-      const b2 = base.replace(/\/+$/, "");
-      const path = input.startsWith("/") ? input : "/" + input;
-      url2 = b2 + path;
-    }
-    this.href = url2;
-    const protoMatch = url2.match(/^([a-zA-Z]+):\/\//);
-    if (protoMatch) {
-      this.protocol = protoMatch[1] + ":";
-      url2 = url2.slice(protoMatch[0].length);
-    }
-    const hashIdx = url2.indexOf("#");
-    if (hashIdx !== -1) {
-      this.hash = url2.slice(hashIdx);
-      url2 = url2.slice(0, hashIdx);
-    }
-    const queryIdx = url2.indexOf("?");
-    if (queryIdx !== -1) {
-      this.search = url2.slice(queryIdx);
-      url2 = url2.slice(0, queryIdx);
-    }
-    const pathIdx = url2.indexOf("/");
-    if (pathIdx !== -1) {
-      this.host = url2.slice(0, pathIdx);
-      this.pathname = url2.slice(pathIdx);
-    } else {
-      this.host = url2;
-      this.pathname = "/";
-    }
-    const portIdx = this.host.indexOf(":");
-    if (portIdx !== -1) {
-      this.hostname = this.host.slice(0, portIdx);
-      this.port = this.host.slice(portIdx + 1);
-    } else {
-      this.hostname = this.host;
-    }
-    this.origin = this.protocol ? `${this.protocol}//${this.host}` : this.host;
-  }
-  toString() {
-    return this.href;
-  }
-  toJSON() {
-    return this.href;
-  }
-};
 var TextDecoderStreamPolyfill = class {
   static {
     __name(this, "TextDecoderStreamPolyfill");
@@ -5080,10 +5027,6 @@ function installStreamsPolyfill() {
   if (typeof g2.Event === "undefined") {
     g2.Event = EventPolyfill;
     console.log("[Polyfill] Event installed.");
-  }
-  if (typeof g2.URL === "undefined") {
-    g2.URL = URLPolyfill;
-    console.log("[Polyfill] URL installed.");
   }
   if (typeof g2.structuredClone === "undefined") {
     g2.structuredClone = /* @__PURE__ */ __name(function structuredClone2(value, _options) {
@@ -39098,13 +39041,12 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
   }
   if (imageBase64 && imageMimeType) {
     console.log(`[Agent] Message includes attached image (${imageMimeType}, ${imageBase64.length} base64 chars)`);
-    const dataUrl = new URL(`data:${imageMimeType};base64,${imageBase64}`);
     conversationHistory.push({
       role: "user",
       content: [
         {
           type: "image",
-          image: dataUrl,
+          image: imageBase64,
           mediaType: imageMimeType
         },
         {
@@ -39124,7 +39066,7 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
       apiKey: currentConfig.apiKey,
       baseURL: currentConfig.baseURL
     });
-    const model = provider(currentConfig.model || "gpt-4o-mini");
+    const model = provider.chat(currentConfig.model || "gpt-4o-mini");
     const tools = {
       ...createUnityLogTools(),
       ...createScreenshotTools(),
@@ -39157,10 +39099,9 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
         for (const tr2 of toolResults) {
           const execResult = tr2.output;
           if (tr2.toolName === "captureScreenshot" && execResult?.success && execResult?.base64) {
-            const screenshotDataUrl = new URL(`data:image/png;base64,${execResult.base64}`);
             imageParts.push({
               type: "image",
-              image: screenshotDataUrl,
+              image: execResult.base64,
               mediaType: "image/png"
             });
             toolResultParts.push({
