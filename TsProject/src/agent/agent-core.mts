@@ -2,7 +2,7 @@
  * Agent Core Module
  * Uses Vercel AI SDK to interact with LLM APIs.
  */
-import { generateText, type CoreMessage } from 'ai';
+import { generateText, stepCountIs, type ModelMessage } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createUnityLogTools } from '../tools/unity-log-tool.mjs';
 import { createScreenshotTools } from '../tools/screenshot-tool.mjs';
@@ -24,7 +24,7 @@ const DEFAULT_CONFIG: AgentConfig = {
 };
 
 // Conversation history
-let conversationHistory: CoreMessage[] = [];
+let conversationHistory: ModelMessage[] = [];
 let currentConfig: AgentConfig = { ...DEFAULT_CONFIG };
 let isConfigured = false;
 
@@ -72,7 +72,7 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
                 {
                     type: 'image' as const,
                     image: dataUrl,
-                    mimeType: imageMimeType,
+                    mediaType: imageMimeType,
                 } as any,
                 {
                     type: 'text' as const,
@@ -110,7 +110,7 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
                 system: currentConfig.systemPrompt,
                 messages: conversationHistory,
                 tools,
-                maxSteps: 1,  // single step — we manage the loop
+                stopWhen: stepCountIs(1),  // single step — we manage the loop
             });
 
             const toolCalls = result.toolCalls;
@@ -125,16 +125,16 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
                         type: 'tool-call' as const,
                         toolCallId: tc.toolCallId,
                         toolName: tc.toolName,
-                        args: tc.args,
+                        input: tc.input,
                     })),
                 });
 
                 // 2. Build tool-result messages, and collect any images to inject
-                const toolResultParts: CoreMessage['content'] extends infer T ? T extends any[] ? T : never : never = [];
-                const imageParts: Array<{ type: 'image'; image: string; mimeType: string }> = [];
+                const toolResultParts: ModelMessage['content'] extends infer T ? T extends any[] ? T : never : never = [];
+                const imageParts: Array<{ type: 'image'; image: string; mediaType: string }> = [];
 
                 for (const tr of toolResults) {
-                    const execResult = tr.result as any;
+                    const execResult = tr.output as any;
 
                     // For screenshot tool: extract the base64 image data
                     if (tr.toolName === 'captureScreenshot' && execResult?.success && execResult?.base64) {
@@ -144,7 +144,7 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
                         imageParts.push({
                             type: 'image' as const,
                             image: screenshotDataUrl,
-                            mimeType: 'image/png',
+                            mediaType: 'image/png',
                         } as any);
 
                         // Push a text-only tool result (no base64 blob to waste tokens)
@@ -152,11 +152,14 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
                             type: 'tool-result' as const,
                             toolCallId: tr.toolCallId,
                             toolName: tr.toolName,
-                            result: {
-                                success: true,
-                                message: execResult.message || `Screenshot captured (${execResult.width}x${execResult.height}).`,
-                                width: execResult.width,
-                                height: execResult.height,
+                            output: {
+                                type: 'json' as const,
+                                value: {
+                                    success: true,
+                                    message: execResult.message || `Screenshot captured (${execResult.width}x${execResult.height}).`,
+                                    width: execResult.width,
+                                    height: execResult.height,
+                                },
                             },
                         } as any);
                     } else {
@@ -164,7 +167,10 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
                             type: 'tool-result' as const,
                             toolCallId: tr.toolCallId,
                             toolName: tr.toolName,
-                            result: execResult,
+                            output: {
+                                type: 'json' as const,
+                                value: execResult,
+                            },
                         } as any);
                     }
                 }

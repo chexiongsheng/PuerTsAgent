@@ -149,14 +149,17 @@ const patches = [
     [/index:\s*(\w+)\.number\(\)(,\s*\n\s*logprobs:)/g, 'index: $1.number().nullish()$2'],
 ];
 // String-based patches (exact text replacement, not regex)
+// Note: the image data URL roundtrip patch is no longer needed in AI SDK v6+
+// because v6 keeps base64 strings as-is without Uint8Array roundtrip.
 const stringPatches = [
-    // AI SDK convertPartToLanguageModelPart: for image parts with data: URLs,
-    // skip the base64→Uint8Array→base64 roundtrip which can fail in polyfill
-    // environments (PuerTS V8). Keep the URL object as-is so the OpenAI provider
-    // calls .toString() directly.
+    // web-streams-polyfill: installStreamsPolyfill() is called at the very end of
+    // the bundle (in our main.mts entry), but libraries like eventsource-parser use
+    // `class extends TransformStream` at module-level much earlier (line ~24050).
+    // Fix: call installStreamsPolyfill() immediately after its definition so streams
+    // are available globally before any downstream code tries to extend them.
     [
-        `      mimeType = dataUrlMimeType;\n      normalizedData = convertDataContentToUint8Array(base64Content);\n    } else {`,
-        `      mimeType = dataUrlMimeType;\n      // For image parts, keep the data URL as-is to avoid base64 roundtrip\n      // which can fail in polyfill environments (PuerTS V8).\n      // The OpenAI provider will call .toString() on the URL object directly.\n      if (type === "image") {\n        normalizedData = content;\n      } else {\n        normalizedData = convertDataContentToUint8Array(base64Content);\n      }\n    } else {`,
+        `__name(installStreamsPolyfill, "installStreamsPolyfill");`,
+        `__name(installStreamsPolyfill, "installStreamsPolyfill");\ninstallStreamsPolyfill();`,
     ],
 ];
 let patchCount = 0;
