@@ -54,16 +54,38 @@ export function configure(config: Partial<AgentConfig>): string {
  * ourselves, we can inject screenshot images as user-message image parts
  * (which the provider correctly converts to image_url).
  */
-export async function sendMessage(userMessage: string): Promise<string> {
+export async function sendMessage(userMessage: string, imageBase64?: string, imageMimeType?: string): Promise<string> {
     if (!isConfigured || !currentConfig.apiKey) {
         return '[Agent] Not configured. Please set API key first via the Settings panel.';
     }
 
-    // Add user message to history
-    conversationHistory.push({
-        role: 'user',
-        content: userMessage,
-    });
+    // Add user message to history (with optional image)
+    if (imageBase64 && imageMimeType) {
+        console.log(`[Agent] Message includes attached image (${imageMimeType}, ${imageBase64.length} base64 chars)`);
+        // Use data: URL format so AI SDK's URL polyfill correctly recognises it as
+        // a data URI (protocol === "data:") and the OpenAI provider emits
+        // { type: "image_url", image_url: { url: "data:image/png;base64,..." } }
+        const dataUrl = new URL(`data:${imageMimeType};base64,${imageBase64}`);
+        conversationHistory.push({
+            role: 'user',
+            content: [
+                {
+                    type: 'image' as const,
+                    image: dataUrl,
+                    mimeType: imageMimeType,
+                } as any,
+                {
+                    type: 'text' as const,
+                    text: userMessage,
+                },
+            ],
+        });
+    } else {
+        conversationHistory.push({
+            role: 'user',
+            content: userMessage,
+        });
+    }
 
     try {
         const provider = createOpenAI({
@@ -116,12 +138,14 @@ export async function sendMessage(userMessage: string): Promise<string> {
 
                     // For screenshot tool: extract the base64 image data
                     if (tr.toolName === 'captureScreenshot' && execResult?.success && execResult?.base64) {
-                        // Store image to inject as a user message later
+                        // Store image to inject as a user message later.
+                        // Use data: URL so the polyfill URL is recognised as data protocol.
+                        const screenshotDataUrl = new URL(`data:image/png;base64,${execResult.base64}`);
                         imageParts.push({
                             type: 'image' as const,
-                            image: execResult.base64,
+                            image: screenshotDataUrl,
                             mimeType: 'image/png',
-                        });
+                        } as any);
 
                         // Push a text-only tool result (no base64 blob to waste tokens)
                         toolResultParts.push({

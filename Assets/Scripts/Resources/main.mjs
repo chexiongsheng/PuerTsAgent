@@ -50,6 +50,8 @@ if (typeof globalThis.URL === 'undefined') {
             this.protocol = ''; this.host = ''; this.hostname = '';
             this.port = ''; this.pathname = '/'; this.search = '';
             this.hash = ''; this.origin = ''; this.username = ''; this.password = '';
+            const dataProtoMatch = url.match(/^(data):/i);
+            if (dataProtoMatch) { this.protocol = dataProtoMatch[1].toLowerCase() + ':'; }
             const protoMatch = url.match(/^([a-zA-Z]+):\/\//);
             if (protoMatch) { this.protocol = protoMatch[1] + ':'; url = url.slice(protoMatch[0].length); }
             const hashIdx = url.indexOf('#');
@@ -12758,7 +12760,14 @@ function convertPartToLanguageModelPart(part, downloadedAssets) {
         throw new Error(`Invalid data URL format in part ${type}`);
       }
       mimeType = dataUrlMimeType;
-      normalizedData = convertDataContentToUint8Array(base64Content);
+      // For image parts, keep the data URL as-is to avoid base64 roundtrip
+      // which can fail in polyfill environments (PuerTS V8).
+      // The OpenAI provider will call .toString() on the URL object directly.
+      if (type === "image") {
+        normalizedData = content;
+      } else {
+        normalizedData = convertDataContentToUint8Array(base64Content);
+      }
     } else {
       const downloadedFile = downloadedAssets[content.toString()];
       if (downloadedFile) {
@@ -15776,7 +15785,7 @@ var openaiChatResponseSchema = external_exports.object({
           })
         ).nullish()
       }),
-      index: external_exports.number(),
+      index: external_exports.number().nullish(),
       logprobs: external_exports.object({
         content: external_exports.array(
           external_exports.object({
@@ -16243,7 +16252,7 @@ var openaiCompletionChunkSchema = external_exports.union([
       external_exports.object({
         text: external_exports.string(),
         finish_reason: external_exports.string().nullish(),
-        index: external_exports.number(),
+        index: external_exports.number().nullish(),
         logprobs: external_exports.object({
           tokens: external_exports.array(external_exports.string()),
           token_logprobs: external_exports.array(external_exports.number()),
@@ -17882,14 +17891,33 @@ function configure(config) {
   return `[Agent] Configured successfully. Model: ${currentConfig.model}`;
 }
 __name(configure, "configure");
-async function sendMessage(userMessage) {
+async function sendMessage(userMessage, imageBase64, imageMimeType) {
   if (!isConfigured || !currentConfig.apiKey) {
     return "[Agent] Not configured. Please set API key first via the Settings panel.";
   }
-  conversationHistory.push({
-    role: "user",
-    content: userMessage
-  });
+  if (imageBase64 && imageMimeType) {
+    console.log(`[Agent] Message includes attached image (${imageMimeType}, ${imageBase64.length} base64 chars)`);
+    const dataUrl = new URL(`data:${imageMimeType};base64,${imageBase64}`);
+    conversationHistory.push({
+      role: "user",
+      content: [
+        {
+          type: "image",
+          image: dataUrl,
+          mimeType: imageMimeType
+        },
+        {
+          type: "text",
+          text: userMessage
+        }
+      ]
+    });
+  } else {
+    conversationHistory.push({
+      role: "user",
+      content: userMessage
+    });
+  }
   try {
     const provider = createOpenAI({
       apiKey: currentConfig.apiKey,
@@ -17928,9 +17956,10 @@ async function sendMessage(userMessage) {
         for (const tr2 of toolResults) {
           const execResult = tr2.result;
           if (tr2.toolName === "captureScreenshot" && execResult?.success && execResult?.base64) {
+            const screenshotDataUrl = new URL(`data:image/png;base64,${execResult.base64}`);
             imageParts.push({
               type: "image",
-              image: execResult.base64,
+              image: screenshotDataUrl,
               mimeType: "image/png"
             });
             toolResultParts.push({
@@ -18017,13 +18046,13 @@ function configureAgent(apiKey, baseURL, model, systemPrompt) {
   });
 }
 __name(configureAgent, "configureAgent");
-function onMessageReceived(message, callback) {
-  console.log(`[Agent] User said: ${message}`);
+function onMessageReceived(message, imageBase64, imageMimeType, callback) {
+  console.log(`[Agent] User said: ${message}${imageBase64 ? " (with image)" : ""}`);
   if (!getIsConfigured()) {
     callback.Invoke("[Agent] Not configured. Please set your API key in Settings.", false);
     return;
   }
-  sendMessage(message).then((response) => {
+  sendMessage(message, imageBase64 || void 0, imageMimeType || void 0).then((response) => {
     callback.Invoke(response, false);
   }).catch((error) => {
     const errorMsg = `[Agent] Error: ${error.message || String(error)}`;

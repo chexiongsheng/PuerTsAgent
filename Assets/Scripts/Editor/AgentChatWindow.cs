@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEditor;
 using UnityEngine;
 using LLMAgent;
@@ -17,6 +18,10 @@ namespace LLMAgent.Editor
         private readonly List<ChatMessage> messages = new List<ChatMessage>();
         private bool shouldScrollToBottom;
         private bool isWaitingForResponse;
+
+        // Image attachment
+        private string attachedImagePath = null;
+        private Texture2D attachedImagePreviewTex = null;
 
         // Settings
         private bool showSettings;
@@ -70,6 +75,7 @@ namespace LLMAgent.Editor
             public string Text;
             public bool IsUser;
             public string Timestamp;
+            public string ImagePath; // optional: path to attached image
         }
 
         [MenuItem("LLM Agent/Chat Window")]
@@ -737,6 +743,39 @@ namespace LLMAgent.Editor
                 GUI.DrawTexture(inputAreaRect, inputAreaBgTex, ScaleMode.StretchToFill);
             }
 
+            // Image attachment preview bar
+            if (!string.IsNullOrEmpty(attachedImagePath))
+            {
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Space(4);
+
+                // Preview thumbnail
+                if (attachedImagePreviewTex != null)
+                {
+                    GUILayout.Label(new GUIContent(attachedImagePreviewTex), GUILayout.Width(32), GUILayout.Height(32));
+                }
+
+                // Filename label
+                string fileName = Path.GetFileName(attachedImagePath);
+                GUIStyle attachLabelStyle = new GUIStyle(EditorStyles.miniLabel)
+                {
+                    fontStyle = FontStyle.Italic,
+                    normal = { textColor = EditorGUIUtility.isProSkin ? new Color(0.7f, 0.8f, 1.0f) : new Color(0.2f, 0.4f, 0.8f) }
+                };
+                GUILayout.Label("\U0001F4CE " + fileName, attachLabelStyle, GUILayout.Height(32));
+
+                GUILayout.FlexibleSpace();
+
+                // Remove button
+                if (GUILayout.Button("\u2716", EditorStyles.miniButton, GUILayout.Width(22), GUILayout.Height(20)))
+                {
+                    ClearAttachedImage();
+                }
+                GUILayout.Space(4);
+                EditorGUILayout.EndHorizontal();
+                GUILayout.Space(2);
+            }
+
             EditorGUILayout.BeginHorizontal();
 
             // Handle Enter key to send
@@ -744,6 +783,21 @@ namespace LLMAgent.Editor
                 && Event.current.keyCode == KeyCode.Return
                 && !Event.current.shift
                 && GUI.GetNameOfFocusedControl() == InputControlName;
+
+            // Attach image button
+            GUIContent attachIcon = new GUIContent("\U0001F4F7", "Attach an image file");
+            GUIStyle attachBtnStyle = new GUIStyle(EditorStyles.miniButton)
+            {
+                fontSize = 14,
+                padding = new RectOffset(4, 4, 4, 4),
+                margin = new RectOffset(0, 4, 4, 4),
+                fixedWidth = 32,
+                fixedHeight = 32
+            };
+            if (GUILayout.Button(attachIcon, attachBtnStyle))
+            {
+                OpenImageFileBrowser();
+            }
 
             // Text input
             GUI.SetNextControlName(InputControlName);
@@ -769,8 +823,9 @@ namespace LLMAgent.Editor
             // Process send
             if ((sendClicked || enterPressed) && !string.IsNullOrWhiteSpace(inputText))
             {
-                SendMessage(inputText.Trim());
+                SendMessage(inputText.Trim(), attachedImagePath);
                 inputText = "";
+                ClearAttachedImage();
 
                 // Refocus the input field
                 EditorGUI.FocusTextInControl(InputControlName);
@@ -803,12 +858,19 @@ namespace LLMAgent.Editor
 
         #region Send Logic
 
-        private void SendMessage(string text)
+        private void SendMessage(string text, string imagePath = null)
         {
             string timestamp = DateTime.Now.ToString("HH:mm");
 
+            // Build display text (show image attachment in the message)
+            string displayText = text;
+            if (!string.IsNullOrEmpty(imagePath))
+            {
+                displayText = $"\U0001F4CE {Path.GetFileName(imagePath)}\n{text}";
+            }
+
             // Add user message
-            messages.Add(new ChatMessage { Text = text, IsUser = true, Timestamp = timestamp });
+            messages.Add(new ChatMessage { Text = displayText, IsUser = true, Timestamp = timestamp, ImagePath = imagePath });
 
             // Get response from TS asynchronously
             if (scriptManager != null && scriptManager.IsInitialized)
@@ -817,7 +879,7 @@ namespace LLMAgent.Editor
                 shouldScrollToBottom = true;
                 Repaint();
 
-                scriptManager.SendMessageAsync(text, (response, isError) =>
+                scriptManager.SendMessageAsync(text, imagePath, (response, isError) =>
                 {
                     isWaitingForResponse = false;
                     messages.Add(new ChatMessage
@@ -844,8 +906,73 @@ namespace LLMAgent.Editor
 
         #endregion
 
+        #region Image Attachment
+
+        private void OpenImageFileBrowser()
+        {
+            string path = EditorUtility.OpenFilePanel(
+                "Select Image",
+                "",
+                "png,jpg,jpeg,bmp,gif,tga,webp"
+            );
+
+            if (!string.IsNullOrEmpty(path))
+            {
+                attachedImagePath = path;
+                LoadImagePreview(path);
+                Repaint();
+            }
+        }
+
+        private void LoadImagePreview(string path)
+        {
+            ClearImagePreviewTex();
+            try
+            {
+                byte[] fileBytes = File.ReadAllBytes(path);
+                var tex = new Texture2D(2, 2);
+                if (tex.LoadImage(fileBytes))
+                {
+                    // Create a small thumbnail
+                    int thumbSize = 32;
+                    RenderTexture rt = RenderTexture.GetTemporary(thumbSize, thumbSize, 0);
+                    RenderTexture.active = rt;
+                    Graphics.Blit(tex, rt);
+                    attachedImagePreviewTex = new Texture2D(thumbSize, thumbSize, TextureFormat.RGBA32, false);
+                    attachedImagePreviewTex.ReadPixels(new Rect(0, 0, thumbSize, thumbSize), 0, 0);
+                    attachedImagePreviewTex.Apply();
+                    RenderTexture.active = null;
+                    RenderTexture.ReleaseTemporary(rt);
+                }
+                DestroyImmediate(tex);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[AgentChatWindow] Failed to load image preview: {ex.Message}");
+            }
+        }
+
+        private void ClearAttachedImage()
+        {
+            attachedImagePath = null;
+            ClearImagePreviewTex();
+        }
+
+        private void ClearImagePreviewTex()
+        {
+            if (attachedImagePreviewTex != null)
+            {
+                DestroyImmediate(attachedImagePreviewTex);
+                attachedImagePreviewTex = null;
+            }
+        }
+
+        #endregion
+
         private void OnDestroy()
         {
+            ClearImagePreviewTex();
+
             if (scriptManager != null)
             {
                 scriptManager.Dispose();

@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using UnityEngine;
 using Puerts;
 #if UNITY_EDITOR
@@ -21,7 +22,7 @@ namespace LLMAgent
 
         // TS function delegates
         private Func<string, string, string, string, string> configureAgent;
-        private Action<string, Action<string, bool>> onMessageReceived;
+        private Action<string, string, string, Action<string, bool>> onMessageReceived;
         private Func<string, string> onMessageSync;
         private Action onClearHistory;
         private Func<int> onGetHistoryLength;
@@ -73,7 +74,7 @@ namespace LLMAgent
 
                 // Get exported functions from TS module
                 configureAgent = moduleExports.Get<Func<string, string, string, string, string>>("configureAgent");
-                onMessageReceived = moduleExports.Get<Action<string, Action<string, bool>>>("onMessageReceived");
+                onMessageReceived = moduleExports.Get<Action<string, string, string, Action<string, bool>>>("onMessageReceived");
                 onMessageSync = moduleExports.Get<Func<string, string>>("onMessageSync");
                 onClearHistory = moduleExports.Get<Action>("onClearHistory");
                 onGetHistoryLength = moduleExports.Get<Func<int>>("onGetHistoryLength");
@@ -180,8 +181,9 @@ namespace LLMAgent
 
         /// <summary>
         /// Send a message to the TS side asynchronously via callback pattern.
+        /// Optionally includes an image file path to attach.
         /// </summary>
-        public void SendMessageAsync(string message, Action<string, bool> onResponse)
+        public void SendMessageAsync(string message, string imagePath, Action<string, bool> onResponse)
         {
             if (!isInitialized || onMessageReceived == null)
             {
@@ -191,7 +193,31 @@ namespace LLMAgent
 
             try
             {
-                onMessageReceived(message, (response, isError) =>
+                string imageBase64 = "";
+                string mimeType = "";
+
+                if (!string.IsNullOrEmpty(imagePath) && File.Exists(imagePath))
+                {
+                    byte[] imageBytes = File.ReadAllBytes(imagePath);
+                    imageBase64 = Convert.ToBase64String(imageBytes);
+
+                    string ext = Path.GetExtension(imagePath).ToLowerInvariant();
+                    switch (ext)
+                    {
+                        case ".png": mimeType = "image/png"; break;
+                        case ".jpg":
+                        case ".jpeg": mimeType = "image/jpeg"; break;
+                        case ".gif": mimeType = "image/gif"; break;
+                        case ".bmp": mimeType = "image/bmp"; break;
+                        case ".webp": mimeType = "image/webp"; break;
+                        case ".tga": mimeType = "image/tga"; break;
+                        default: mimeType = "image/png"; break;
+                    }
+
+                    Debug.Log($"[AgentScriptManager] Attaching image: {imagePath} ({imageBytes.Length} bytes, {mimeType})");
+                }
+
+                onMessageReceived(message, imageBase64, mimeType, (response, isError) =>
                 {
                     onResponse?.Invoke(response, isError);
                 });

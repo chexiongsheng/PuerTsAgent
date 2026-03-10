@@ -188,7 +188,7 @@ namespace LLMAgent
             chatHistory.Add(new ChatMessage { role = "user", content = message });
             isWaiting = true;
 
-            agentManager.SendMessageAsync(message, (response, isError) =>
+            agentManager.SendMessageAsync(message, null, (response, isError) =>
             {
                 isWaiting = false;
                 chatHistory.Add(new ChatMessage

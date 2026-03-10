@@ -51,8 +51,8 @@ export function configureAgent(
  * @param message - User input text
  * @param callback - C# Action<string, bool> callback to invoke with (response, isError)
  */
-export function onMessageReceived(message: string, callback: CS.System.Action$2<string, boolean>): void {
-    console.log(`[Agent] User said: ${message}`);
+export function onMessageReceived(message: string, imageBase64: string, imageMimeType: string, callback: CS.System.Action$2<string, boolean>): void {
+    console.log(`[Agent] User said: ${message}${imageBase64 ? ' (with image)' : ''}`);
 
     if (!getIsConfigured()) {
         // Immediately callback with error
@@ -61,7 +61,7 @@ export function onMessageReceived(message: string, callback: CS.System.Action$2<
     }
 
     // Fire and forget - the async operation will call back when done
-    sendMessage(message)
+    sendMessage(message, imageBase64 || undefined, imageMimeType || undefined)
         .then((response: string) => {
             callback.Invoke!(response, false);
         })

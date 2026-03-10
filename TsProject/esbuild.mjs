@@ -1,4 +1,5 @@
 import { build } from 'esbuild';
+import { readFileSync, writeFileSync } from 'fs';
 
 // Banner code: polyfills that MUST be available before any module-level code executes.
 // AI SDK uses `instanceof(URL)` in top-level schema definitions, so URL must exist globally
@@ -55,6 +56,8 @@ if (typeof globalThis.URL === 'undefined') {
             this.protocol = ''; this.host = ''; this.hostname = '';
             this.port = ''; this.pathname = '/'; this.search = '';
             this.hash = ''; this.origin = ''; this.username = ''; this.password = '';
+            const dataProtoMatch = url.match(/^(data):/i);
+            if (dataProtoMatch) { this.protocol = dataProtoMatch[1].toLowerCase() + ':'; }
             const protoMatch = url.match(/^([a-zA-Z]+):\\/\\//);
             if (protoMatch) { this.protocol = protoMatch[1] + ':'; url = url.slice(protoMatch[0].length); }
             const hashIdx = url.indexOf('#');
@@ -138,4 +141,38 @@ await build({
     },
 });
 
+// --- Post-build patches for third-party compatibility issues ---
+const outPath = '../Assets/Scripts/Resources/main.mjs';
+let code = readFileSync(outPath, 'utf-8');
+const patches = [
+    // @ai-sdk/openai: some providers (e.g. Claude) omit `index` in choices; make it optional
+    [/index:\s*(\w+)\.number\(\)(,\s*\n\s*logprobs:)/g, 'index: $1.number().nullish()$2'],
+];
+// String-based patches (exact text replacement, not regex)
+const stringPatches = [
+    // AI SDK convertPartToLanguageModelPart: for image parts with data: URLs,
+    // skip the base64→Uint8Array→base64 roundtrip which can fail in polyfill
+    // environments (PuerTS V8). Keep the URL object as-is so the OpenAI provider
+    // calls .toString() directly.
+    [
+        `      mimeType = dataUrlMimeType;\n      normalizedData = convertDataContentToUint8Array(base64Content);\n    } else {`,
+        `      mimeType = dataUrlMimeType;\n      // For image parts, keep the data URL as-is to avoid base64 roundtrip\n      // which can fail in polyfill environments (PuerTS V8).\n      // The OpenAI provider will call .toString() on the URL object directly.\n      if (type === "image") {\n        normalizedData = content;\n      } else {\n        normalizedData = convertDataContentToUint8Array(base64Content);\n      }\n    } else {`,
+    ],
+];
+let patchCount = 0;
+for (const [pattern, replacement] of patches) {
+    const before = code;
+    code = code.replace(pattern, replacement);
+    if (code !== before) patchCount++;
+}
+for (const [search, replacement] of stringPatches) {
+    if (code.includes(search)) {
+        code = code.replace(search, replacement);
+        patchCount++;
+    }
+}
+if (patchCount > 0) {
+    writeFileSync(outPath, code, 'utf-8');
+    console.log(`[esbuild] Applied ${patchCount} post-build patch(es).`);
+}
 console.log('[esbuild] Bundle built successfully → ../Assets/Scripts/Resources/main.mjs');
