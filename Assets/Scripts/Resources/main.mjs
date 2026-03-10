@@ -5260,6 +5260,7 @@ function installFetchPolyfill() {
   }
 }
 __name(installFetchPolyfill, "installFetchPolyfill");
+installFetchPolyfill();
 
 // node_modules/@ai-sdk/provider/dist/index.mjs
 var marker = "vercel.ai.error";
@@ -39181,8 +39182,6 @@ __name(getIsConfigured, "getIsConfigured");
 
 // src/main.mts
 console.log("[Agent] LLM Agent initialized.");
-installStreamsPolyfill();
-installFetchPolyfill();
 CS.LLMAgent.UnityLogBridge.StartListening();
 console.log("[Agent] LLM Agent module loaded.");
 function configureAgent(apiKey, baseURL, model, systemPrompt) {

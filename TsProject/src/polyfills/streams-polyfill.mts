@@ -215,3 +215,5 @@ export function installStreamsPolyfill(): void {
         console.log('[Polyfill] structuredClone installed.');
     }
 }
+
+installStreamsPolyfill();

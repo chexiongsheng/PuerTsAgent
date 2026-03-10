@@ -6,8 +6,8 @@ console.log("[Agent] LLM Agent initialized.");
  * LLM Agent Entry Module
  * This is the main entry point loaded by PuerTS.
  */
-import { installStreamsPolyfill } from './polyfills/streams-polyfill.mjs';
-import { installFetchPolyfill } from './polyfills/fetch-polyfill.mjs';
+import './polyfills/streams-polyfill.mjs';
+import './polyfills/fetch-polyfill.mjs';
 import {
     configure,
     sendMessage,
@@ -15,11 +15,6 @@ import {
     getHistoryLength,
     getIsConfigured,
 } from './agent/agent-core.mjs';
-
-// Install polyfills before anything else (order matters: streams -> fetch)
-// Note: atob/btoa polyfill is injected via esbuild banner (must run before AI SDK module-level code)
-installStreamsPolyfill();
-installFetchPolyfill();
 
 // Start capturing Unity logs for the agent's log tool
 CS.LLMAgent.UnityLogBridge.StartListening();

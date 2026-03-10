@@ -275,3 +275,5 @@ export function installFetchPolyfill(): void {
         console.log('[Polyfill] fetch already available, skipping polyfill.');
     }
 }
+
+installFetchPolyfill();

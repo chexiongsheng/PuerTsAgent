@@ -166,10 +166,10 @@ const stringPatches = [
     // `class extends TransformStream` at module-level much earlier (line ~24050).
     // Fix: call installStreamsPolyfill() immediately after its definition so streams
     // are available globally before any downstream code tries to extend them.
-    [
-        `__name(installStreamsPolyfill, "installStreamsPolyfill");`,
-        `__name(installStreamsPolyfill, "installStreamsPolyfill");\ninstallStreamsPolyfill();`,
-    ],
+    //[
+    //    `__name(installStreamsPolyfill, "installStreamsPolyfill");`,
+    //    `__name(installStreamsPolyfill, "installStreamsPolyfill");\ninstallStreamsPolyfill();`,
+    //],
 ];
 let patchCount = 0;
 for (const [pattern, replacement] of patches) {
