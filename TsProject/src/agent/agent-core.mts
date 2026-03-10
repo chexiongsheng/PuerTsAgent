@@ -206,7 +206,7 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
             ...createEvalTools(),
         };
 
-        const MAX_STEPS = 5;
+        const MAX_STEPS = 25;
 
         for (let step = 0; step < MAX_STEPS; step++) {
             const result = await generateText({

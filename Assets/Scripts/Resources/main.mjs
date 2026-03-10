@@ -39221,7 +39221,7 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
       ...createTypeReflectionTools(),
       ...createEvalTools()
     };
-    const MAX_STEPS = 5;
+    const MAX_STEPS = 25;
     for (let step = 0; step < MAX_STEPS; step++) {
       const result2 = await generateText({
         model,
