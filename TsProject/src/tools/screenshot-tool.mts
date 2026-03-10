@@ -31,7 +31,7 @@ export function createScreenshotTools() {
                 'Use this tool when you need to see what is currently displayed in the game, ' +
                 'diagnose visual issues, check UI layout, or analyze the game state visually. ' +
                 'The image will be resized to fit within the specified max dimensions to reduce token usage.',
-            parameters: z.object({
+            inputSchema: z.object({
                 maxWidth: z
                     .number()
                     .int()
@@ -79,21 +79,23 @@ export function createScreenshotTools() {
                     };
                 }
             },
-            // This is the key: convert the tool result into multi-modal content
-            // so the AI SDK sends the image as an actual image (like image_url)
-            // instead of just a JSON blob with base64 text.
-            experimental_toToolResultContent(result: ScreenshotResult) {
+            // Convert the tool result into multi-modal content
+            // so the AI SDK sends the image as an actual image.
+            toModelOutput({ output: result }: { output: ScreenshotResult }) {
                 if (!result.success || !result.base64) {
-                    return [{ type: 'text' as const, text: result.message }];
+                    return { type: 'content' as const, value: [{ type: 'text' as const, text: result.message }] };
                 }
-                return [
-                    { type: 'text' as const, text: result.message },
-                    {
-                        type: 'image' as const,
-                        data: result.base64,
-                        mimeType: 'image/png' as const,
-                    },
-                ];
+                return {
+                    type: 'content' as const,
+                    value: [
+                        { type: 'text' as const, text: result.message },
+                        {
+                            type: 'file-data' as const,
+                            data: result.base64,
+                            mediaType: 'image/png',
+                        },
+                    ],
+                };
             },
         }),
     };

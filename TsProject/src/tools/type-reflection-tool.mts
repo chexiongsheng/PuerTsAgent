@@ -25,7 +25,7 @@ export function createTypeReflectionTools() {
                 'Use this as the first step when exploring available C# APIs. ' +
                 'The result is cached after the first call, so subsequent calls are fast. ' +
                 'Returns a JSON object with a "namespaces" array of namespace name strings.',
-            parameters: z.object({}),
+            inputSchema: z.object({}),
             execute: async () => {
                 try {
                     const json = CS.LLMAgent.TypeReflectionBridge.GetAllNamespaces();
@@ -48,7 +48,7 @@ export function createTypeReflectionTools() {
                 'one or more C# namespaces. Returns type name, full name, and kind for each type. ' +
                 'Does NOT return property/method details – use getTypeDetails for that. ' +
                 'Pass one or more namespace names separated by commas.',
-            parameters: z.object({
+            inputSchema: z.object({
                 namespaces: z
                     .string()
                     .describe(
@@ -79,7 +79,7 @@ export function createTypeReflectionTools() {
                 'implemented interfaces, base type, and enum values (for enums). ' +
                 'Pass fully-qualified type names separated by commas, ' +
                 'e.g. "UnityEngine.Transform,UnityEngine.GameObject".',
-            parameters: z.object({
+            inputSchema: z.object({
                 typeNames: z
                     .string()
                     .describe(

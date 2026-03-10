@@ -18,7 +18,7 @@ export function createUnityLogTools() {
                 'Get recent Unity console logs. Use this tool to inspect Unity Editor/Runtime logs, ' +
                 'including errors, warnings, and normal log messages. ' +
                 'Useful for debugging issues, checking for errors, or monitoring application state.',
-            parameters: z.object({
+            inputSchema: z.object({
                 count: z
                     .number()
                     .int()
@@ -69,7 +69,7 @@ export function createUnityLogTools() {
             description:
                 'Get a summary count of Unity console logs by type (errors, warnings, normal logs). ' +
                 'Use this to quickly check if there are any errors or warnings without retrieving full log details.',
-            parameters: z.object({}),
+            inputSchema: z.object({}),
             execute: async () => {
                 try {
                     const summaryJson = CS.LLMAgent.UnityLogBridge.GetLogSummary();

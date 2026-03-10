@@ -93,91 +93,7 @@ class EventPolyfill {
     }
 }
 
-/**
- * Minimal URL polyfill for PuerTS V8 environment.
- * Supports new URL(input) and new URL(input, base) patterns used by AI SDK.
- */
-class URLPolyfill {
-    href: string;
-    protocol: string = '';
-    host: string = '';
-    hostname: string = '';
-    port: string = '';
-    pathname: string = '';
-    search: string = '';
-    hash: string = '';
-    origin: string = '';
-    username: string = '';
-    password: string = '';
-
-    constructor(input: string, base?: string) {
-        let url = input;
-
-        // Handle relative URLs with base
-        if (base && !input.match(/^[a-zA-Z]+:\/\//)) {
-            // Remove trailing slash from base
-            const b = base.replace(/\/+$/, '');
-            // Ensure input starts with /
-            const path = input.startsWith('/') ? input : '/' + input;
-            url = b + path;
-        }
-
-        this.href = url;
-
-        // Parse protocol
-        const protoMatch = url.match(/^([a-zA-Z]+):\/\//);
-        if (protoMatch) {
-            this.protocol = protoMatch[1] + ':';
-            url = url.slice(protoMatch[0].length);
-        }
-
-        // Parse hash
-        const hashIdx = url.indexOf('#');
-        if (hashIdx !== -1) {
-            this.hash = url.slice(hashIdx);
-            url = url.slice(0, hashIdx);
-        }
-
-        // Parse search/query
-        const queryIdx = url.indexOf('?');
-        if (queryIdx !== -1) {
-            this.search = url.slice(queryIdx);
-            url = url.slice(0, queryIdx);
-        }
-
-        // Parse host and pathname
-        const pathIdx = url.indexOf('/');
-        if (pathIdx !== -1) {
-            this.host = url.slice(0, pathIdx);
-            this.pathname = url.slice(pathIdx);
-        } else {
-            this.host = url;
-            this.pathname = '/';
-        }
-
-        // Parse port from host
-        const portIdx = this.host.indexOf(':');
-        if (portIdx !== -1) {
-            this.hostname = this.host.slice(0, portIdx);
-            this.port = this.host.slice(portIdx + 1);
-        } else {
-            this.hostname = this.host;
-        }
-
-        this.origin = this.protocol ? `${this.protocol}//${this.host}` : this.host;
-    }
-
-    toString(): string {
-        return this.href;
-    }
-
-    toJSON(): string {
-        return this.href;
-    }
-}
-
-/**
- * TextDecoderStream polyfill using TransformStream + TextDecoder.
+/** * TextDecoderStream polyfill using TransformStream + TextDecoder.
  */
 class TextDecoderStreamPolyfill {
     private _decoder: TextDecoder;
@@ -284,11 +200,7 @@ export function installStreamsPolyfill(): void {
         console.log('[Polyfill] Event installed.');
     }
 
-    // URL
-    if (typeof g.URL === 'undefined') {
-        g.URL = URLPolyfill;
-        console.log('[Polyfill] URL installed.');
-    }
+    // URL — provided by esbuild banner polyfill, no need to install here.
 
     // structuredClone
     if (typeof g.structuredClone === 'undefined') {

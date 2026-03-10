@@ -2,7 +2,7 @@
  * Agent Core Module
  * Uses Vercel AI SDK to interact with LLM APIs.
  */
-import { generateText, type CoreMessage } from 'ai';
+import { generateText, stepCountIs, type ModelMessage } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createUnityLogTools } from '../tools/unity-log-tool.mjs';
 import { createScreenshotTools } from '../tools/screenshot-tool.mjs';
@@ -24,7 +24,7 @@ const DEFAULT_CONFIG: AgentConfig = {
 };
 
 // Conversation history
-let conversationHistory: CoreMessage[] = [];
+let conversationHistory: ModelMessage[] = [];
 let currentConfig: AgentConfig = { ...DEFAULT_CONFIG };
 let isConfigured = false;
 
@@ -62,17 +62,18 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
     // Add user message to history (with optional image)
     if (imageBase64 && imageMimeType) {
         console.log(`[Agent] Message includes attached image (${imageMimeType}, ${imageBase64.length} base64 chars)`);
-        // Use data: URL format so AI SDK's URL polyfill correctly recognises it as
-        // a data URI (protocol === "data:") and the OpenAI provider emits
+        // Pass raw base64 string + mediaType so the AI SDK treats it as inline
+        // data content.  The OpenAI provider will emit:
         // { type: "image_url", image_url: { url: "data:image/png;base64,..." } }
-        const dataUrl = new URL(`data:${imageMimeType};base64,${imageBase64}`);
+        // NOTE: Do NOT wrap in `new URL("data:...")` – the SDK's downloadAssets
+        // would try to fetch it and validateDownloadUrl rejects data: URLs.
         conversationHistory.push({
             role: 'user',
             content: [
                 {
                     type: 'image' as const,
-                    image: dataUrl,
-                    mimeType: imageMimeType,
+                    image: imageBase64,
+                    mediaType: imageMimeType,
                 } as any,
                 {
                     type: 'text' as const,
@@ -93,7 +94,11 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
             baseURL: currentConfig.baseURL,
         });
 
-        const model = provider(currentConfig.model || 'gpt-4o-mini');
+        // Use provider.chat() to force Chat Completions API format.
+        // In @ai-sdk/openai v3, provider() defaults to the Responses API
+        // which uses a different request format (input/input_text) that
+        // most third-party proxy endpoints do not support.
+        const model = provider.chat(currentConfig.model || 'gpt-4o-mini');
 
         // Create tools for the agent
         const tools = {
@@ -110,7 +115,7 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
                 system: currentConfig.systemPrompt,
                 messages: conversationHistory,
                 tools,
-                maxSteps: 1,  // single step — we manage the loop
+                stopWhen: stepCountIs(1),  // single step — we manage the loop
             });
 
             const toolCalls = result.toolCalls;
@@ -125,26 +130,26 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
                         type: 'tool-call' as const,
                         toolCallId: tc.toolCallId,
                         toolName: tc.toolName,
-                        args: tc.args,
+                        input: tc.input,
                     })),
                 });
 
                 // 2. Build tool-result messages, and collect any images to inject
-                const toolResultParts: CoreMessage['content'] extends infer T ? T extends any[] ? T : never : never = [];
-                const imageParts: Array<{ type: 'image'; image: string; mimeType: string }> = [];
+                const toolResultParts: ModelMessage['content'] extends infer T ? T extends any[] ? T : never : never = [];
+                const imageParts: Array<{ type: 'image'; image: string; mediaType: string }> = [];
 
                 for (const tr of toolResults) {
-                    const execResult = tr.result as any;
+                    const execResult = tr.output as any;
 
                     // For screenshot tool: extract the base64 image data
                     if (tr.toolName === 'captureScreenshot' && execResult?.success && execResult?.base64) {
                         // Store image to inject as a user message later.
-                        // Use data: URL so the polyfill URL is recognised as data protocol.
-                        const screenshotDataUrl = new URL(`data:image/png;base64,${execResult.base64}`);
+                        // Pass raw base64 string so the SDK does not attempt to
+                        // download a data: URL (which would fail validation).
                         imageParts.push({
                             type: 'image' as const,
-                            image: screenshotDataUrl,
-                            mimeType: 'image/png',
+                            image: execResult.base64,
+                            mediaType: 'image/png',
                         } as any);
 
                         // Push a text-only tool result (no base64 blob to waste tokens)
@@ -152,11 +157,14 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
                             type: 'tool-result' as const,
                             toolCallId: tr.toolCallId,
                             toolName: tr.toolName,
-                            result: {
-                                success: true,
-                                message: execResult.message || `Screenshot captured (${execResult.width}x${execResult.height}).`,
-                                width: execResult.width,
-                                height: execResult.height,
+                            output: {
+                                type: 'json' as const,
+                                value: {
+                                    success: true,
+                                    message: execResult.message || `Screenshot captured (${execResult.width}x${execResult.height}).`,
+                                    width: execResult.width,
+                                    height: execResult.height,
+                                },
                             },
                         } as any);
                     } else {
@@ -164,7 +172,10 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
                             type: 'tool-result' as const,
                             toolCallId: tr.toolCallId,
                             toolName: tr.toolName,
-                            result: execResult,
+                            output: {
+                                type: 'json' as const,
+                                value: execResult,
+                            },
                         } as any);
                     }
                 }
