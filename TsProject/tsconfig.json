@@ -3,7 +3,7 @@
     "target": "esnext",
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "outDir": "../Assets/Scripts/Resources",
+    "outDir": "../PuertsAgent/Resources",
     "rootDir": "src",
     "strict": true,
     "esModuleInterop": true,

@@ -117,7 +117,7 @@ await build({
     entryPoints: ['src/main.mts'],
     bundle: true,
     format: 'esm',
-    outfile: '../Assets/Scripts/Resources/main.mjs',
+    outfile: '../PuertsAgent/Resources/main.mjs',
     platform: 'neutral',  // Not node, not browser - neutral for V8 embedding
     target: 'esnext',
     sourcemap: false,
@@ -151,7 +151,7 @@ await build({
 });
 
 // --- Post-build patches for third-party compatibility issues ---
-const outPath = '../Assets/Scripts/Resources/main.mjs';
+const outPath = '../PuertsAgent/Resources/main.mjs';
 let code = readFileSync(outPath, 'utf-8');
 const patches = [
     // @ai-sdk/openai: some providers (e.g. Claude) omit `index` in choices; make it optional
@@ -187,4 +187,4 @@ if (patchCount > 0) {
     writeFileSync(outPath, code, 'utf-8');
     console.log(`[esbuild] Applied ${patchCount} post-build patch(es).`);
 }
-console.log('[esbuild] Bundle built successfully → ../Assets/Scripts/Resources/main.mjs');
+console.log('[esbuild] Bundle built successfully → ../PuertsAgent/Resources/main.mjs');
