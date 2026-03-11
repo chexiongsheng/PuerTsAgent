@@ -14,7 +14,6 @@ namespace LLMAgent
         [SerializeField] private string apiKey = "";
         [SerializeField] private string baseURL = "";
         [SerializeField] private string model = "";
-        [SerializeField] private string systemPrompt = "You are a helpful assistant.";
 
         private AgentScriptManager agentManager;
         private string inputText = "";
@@ -91,18 +90,12 @@ namespace LLMAgent
                 model = GUI.TextField(new Rect(innerX + 85, currentY, innerW - 85, 20), model);
                 currentY += 25;
 
-                // System Prompt
-                GUI.Label(new Rect(innerX, currentY, 100, 20), "System Prompt:");
-                currentY += 22;
-                systemPrompt = GUI.TextArea(new Rect(innerX, currentY, innerW, 50), systemPrompt);
-                currentY += 55;
-
                 // Configure button
                 if (GUI.Button(new Rect(innerX, currentY, 120, 28), "Configure"))
                 {
                     if (agentManager != null && agentManager.IsInitialized)
                     {
-                        string result = agentManager.ConfigureAgent(apiKey, baseURL, model, systemPrompt);
+                        string result = agentManager.ConfigureAgent(apiKey, baseURL, model);
                         Debug.Log($"[RuntimeAgentChat] Configure result: {result}");
                         chatHistory.Add(new ChatMessage { role = "system", content = $"Configure: {result}" });
                     }

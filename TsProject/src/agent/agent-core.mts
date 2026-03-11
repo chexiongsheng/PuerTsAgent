@@ -4,24 +4,127 @@
  */
 import { generateText, stepCountIs, type ModelMessage } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { tool } from 'ai';
+import { z } from 'zod';
 import { createUnityLogTools } from '../tools/unity-log-tool.mjs';
 import { createScreenshotTools } from '../tools/screenshot-tool.mjs';
 import { createTypeReflectionTools } from '../tools/type-reflection-tool.mjs';
 import { createEvalTools } from '../tools/eval-tool.mjs';
+
+// ============================================================
+// BigStringStore – stores large strings replaced by placeholders
+// ============================================================
+
+/** Generate a random alphanumeric suffix of the given length. */
+function randomSuffix(len: number = 5): string {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < len; i++) {
+        result += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return result;
+}
+
+/** Metadata about a stored big string entry. */
+interface BigStringEntry {
+    content: string;
+    length: number;
+    /** A short hint about what this content is, e.g. "code", "eval_result", "screenshot_base64". */
+    contentType: string;
+    /** If true, content cannot be meaningfully retrieved as text (e.g. base64 image data). */
+    nonRetrievable: boolean;
+}
+
+class BigStringStore {
+    private entries: BigStringEntry[] = [];
+    /** Unique prefix for placeholders in this session, e.g. "bigstr_a3f9x". */
+    readonly prefix: string;
+    /** Prefix for non-retrievable image placeholders, e.g. "image_a3f9x". */
+    readonly imagePrefix: string;
+
+    constructor() {
+        const suffix = randomSuffix(5);
+        this.prefix = `bigstr_${suffix}`;
+        this.imagePrefix = `image_${suffix}`;
+    }
+
+    /** Store a string and return its index. */
+    store(content: string, contentType: string, nonRetrievable: boolean = false): number {
+        const index = this.entries.length;
+        this.entries.push({ content, length: content.length, contentType, nonRetrievable });
+        return index;
+    }
+
+    /** Build a placeholder string for a stored entry. */
+    placeholder(index: number, length: number, contentType: string, nonRetrievable: boolean): string {
+        if (nonRetrievable) {
+            return `${this.imagePrefix}(${index}, ${length})`;
+        }
+        return `${this.prefix}(${index}, ${length}, "${contentType}")`;
+    }
+
+    /** Retrieve a stored string by index. Returns null if not found or non-retrievable. */
+    retrieve(index: number): { content: string; contentType: string } | null {
+        if (index < 0 || index >= this.entries.length) return null;
+        const entry = this.entries[index];
+        if (entry.nonRetrievable) return null;
+        return { content: entry.content, contentType: entry.contentType };
+    }
+
+    /** Get entry metadata without content. */
+    getMeta(index: number): { length: number; contentType: string; nonRetrievable: boolean } | null {
+        if (index < 0 || index >= this.entries.length) return null;
+        const { length, contentType, nonRetrievable } = this.entries[index];
+        return { length, contentType, nonRetrievable };
+    }
+
+    /** Clear all stored entries and regenerate prefix. */
+    clear(): void {
+        this.entries = [];
+        const suffix = randomSuffix(5);
+        (this as any).prefix = `bigstr_${suffix}`;
+        (this as any).imagePrefix = `image_${suffix}`;
+    }
+
+    get size(): number {
+        return this.entries.length;
+    }
+}
+
+let bigStringStore = new BigStringStore();
+
+/**
+ * Minimum string length to trigger replacement with a placeholder.
+ * Strings shorter than this are kept inline to avoid unnecessary tool calls.
+ */
+const BIG_STRING_THRESHOLD = 500;
 
 // Agent configuration interface
 export interface AgentConfig {
     apiKey: string;
     baseURL?: string;
     model?: string;
-    systemPrompt?: string;
 }
 
-// Default configuration
-const DEFAULT_CONFIG: AgentConfig = {
-    apiKey: '',
-    model: 'gpt-4o-mini',
-    systemPrompt: `You are a helpful AI assistant running inside Unity via PuerTS (a TypeScript/JavaScript runtime for Unity). You can help with game development, scripting, and general questions. Be concise and practical.
+/** System prompt is managed entirely by the TS side and cannot be overridden from C#. */
+const SYSTEM_PROMPT = `You are a helpful AI assistant running inside Unity via PuerTS (a TypeScript/JavaScript runtime for Unity). You can help with game development, scripting, and general questions. Be concise and practical.
+
+## Context Compression — Placeholder System
+
+To save context space, large strings in **past** tool calls (both request parameters
+and results) are automatically replaced with compact placeholders.
+The placeholder prefixes are unique per session and will be told to you here:
+
+- \`{BIGSTR_PREFIX}(index, length, "type")\` – a text string that was replaced.
+  \`index\` is the storage slot, \`length\` is the original character count,
+  and \`type\` describes the content (e.g. "code", "eval_result").
+  **You can retrieve the original content** by calling the \`retrieveBigString\` tool with the index.
+  Only retrieve it when you genuinely need the exact content — in most cases the
+  surrounding context is enough.
+
+- \`{IMAGE_PREFIX}(index, length)\` – a base64-encoded image that was replaced.
+  These **cannot** be retrieved as text. If you need to see the screenshot again,
+  call the \`captureScreenshot\` tool to take a fresh one.
 
 ## PuerTS: JS ↔ C# Interop Rules
 
@@ -118,13 +221,184 @@ You are running in a PuerTS environment. Below are the rules for interacting bet
 ### Important Notes
 - The \`CS\` global object is always available in the PuerTS JS environment for accessing any C# type.
 - The \`puer\` global object provides PuerTS helper APIs: \`$ref\`, \`$unref\`, \`$generic\`, \`$typeof\`, \`$promise\`.
-`,
+`;
+
+// Default configuration (system prompt is NOT part of the config — it is managed by TS only)
+const DEFAULT_CONFIG: AgentConfig = {
+    apiKey: '',
+    model: 'gpt-4o-mini',
 };
 
 // Conversation history
 let conversationHistory: ModelMessage[] = [];
 let currentConfig: AgentConfig = { ...DEFAULT_CONFIG };
 let isConfigured = false;
+
+// ============================================================
+// History compression – replace big strings with placeholders
+// ============================================================
+
+/**
+ * Determine a human-friendly content type label for a big string
+ * found in a specific context.
+ */
+function inferContentType(key: string, _value: string): string {
+    if (key === 'code') return 'code';
+    if (key === 'result') return 'eval_result';
+    if (key === 'stack') return 'stack_trace';
+    if (key === 'error') return 'error';
+    if (key === 'data' || key === 'base64' || key === 'image') return 'image_base64';
+    return 'text';
+}
+
+/**
+ * Recursively walk a JSON-like value and replace large string leaves
+ * with placeholders. Operates on a **deep clone** – the original is never mutated.
+ */
+function replaceBigStrings(obj: any, parentKey: string = ''): any {
+    if (obj === null || obj === undefined) return obj;
+
+    if (typeof obj === 'string') {
+        if (obj.length >= BIG_STRING_THRESHOLD) {
+            const ctype = inferContentType(parentKey, obj);
+            const isImage = ctype === 'image_base64';
+            const idx = bigStringStore.store(obj, ctype, isImage);
+            return bigStringStore.placeholder(idx, obj.length, ctype, isImage);
+        }
+        return obj;
+    }
+
+    if (Array.isArray(obj)) {
+        const out = new Array(obj.length);
+        for (let i = 0; i < obj.length; i++) {
+            out[i] = replaceBigStrings(obj[i], parentKey);
+        }
+        return out;
+    }
+
+    if (typeof obj === 'object') {
+        const out: any = {};
+        for (const key of Object.keys(obj)) {
+            out[key] = replaceBigStrings(obj[key], key);
+        }
+        return out;
+    }
+
+    return obj;
+}
+
+/**
+ * Compress big strings inside a single message (non-mutating).
+ * Returns a new message object if anything was replaced, otherwise the original.
+ */
+function compressMessage(msg: any): any {
+    try {
+        const compressed = replaceBigStrings(msg);
+        // Quick identity check – if nothing was stored, skip
+        return compressed;
+    } catch {
+        return msg;
+    }
+}
+
+/**
+ * Compress an array of messages, skipping the last `skipTail` messages.
+ * Returns a new array with compressed copies; originals are untouched.
+ */
+function compressMessages(messages: any[], skipTail: number = 0): { messages: any[]; replaced: number } {
+    const end = messages.length - skipTail;
+    let replaced = 0;
+    const result = new Array(messages.length);
+    const storeSizeBefore = bigStringStore.size;
+
+    for (let i = 0; i < messages.length; i++) {
+        if (i < end) {
+            result[i] = compressMessage(messages[i]);
+        } else {
+            result[i] = messages[i];
+        }
+    }
+
+    replaced = bigStringStore.size - storeSizeBefore;
+    return { messages: result, replaced };
+}
+
+/**
+ * The index of the last message in conversationHistory that has already
+ * been compressed in-place. We only process new messages each time.
+ */
+let compressedUpToIndex = 0;
+
+/**
+ * Compress big strings in conversation history **in-place**.
+ * Called once at the start of sendMessage() to shrink messages from
+ * previous rounds before they are sent to generateText().
+ */
+function compressHistoryMessages(): void {
+    const end = conversationHistory.length;
+    if (compressedUpToIndex >= end) return;
+
+    let replacedCount = 0;
+    for (let i = compressedUpToIndex; i < end; i++) {
+        const storeBefore = bigStringStore.size;
+        conversationHistory[i] = compressMessage(conversationHistory[i]);
+        if (bigStringStore.size > storeBefore) replacedCount++;
+    }
+
+    compressedUpToIndex = end;
+    if (replacedCount > 0) {
+        console.log(`[Agent] Compressed ${replacedCount} history messages (bigStringStore size: ${bigStringStore.size})`);
+    }
+}
+
+// ============================================================
+// retrieveBigString tool
+// ============================================================
+
+function createRetrieveBigStringTool() {
+    return {
+        retrieveBigString: tool({
+            description:
+                'Retrieve the original content of a compressed placeholder. ' +
+                'In conversation history, large strings are automatically replaced with ' +
+                'placeholders to save context space. ' +
+                'Call this tool with the index from the placeholder to get the full original text. ' +
+                'Note: image placeholders CANNOT be retrieved — take a new screenshot instead.',
+            inputSchema: z.object({
+                index: z
+                    .number()
+                    .int()
+                    .min(0)
+                    .describe('The index from the placeholder, e.g. for bigstr_xxxxx(3, 1200, "code"), index is 3.'),
+            }),
+            execute: async ({ index }) => {
+                const result = bigStringStore.retrieve(index);
+                if (!result) {
+                    const meta = bigStringStore.getMeta(index);
+                    if (meta?.nonRetrievable) {
+                        return {
+                            success: false,
+                            error: `Entry ${index} is a non-retrievable ${meta.contentType} (${meta.length} chars). If it's an image, take a new screenshot instead.`,
+                        };
+                    }
+                    return {
+                        success: false,
+                        error: `No entry found at index ${index}. Valid range: 0-${bigStringStore.size - 1}.`,
+                    };
+                }
+                return {
+                    success: true,
+                    contentType: result.contentType,
+                    content: result.content,
+                };
+            },
+        }),
+    };
+}
+
+// ============================================================
+// Agent API
+// ============================================================
 
 /**
  * Configure the agent with API credentials and settings.
@@ -143,6 +417,15 @@ export function configure(config: Partial<AgentConfig>): string {
 }
 
 /**
+ * Build the effective system prompt, injecting the current placeholder prefixes.
+ */
+function buildSystemPrompt(): string {
+    return SYSTEM_PROMPT
+        .replace(/\{BIGSTR_PREFIX\}/g, bigStringStore.prefix)
+        .replace(/\{IMAGE_PREFIX\}/g, bigStringStore.imagePrefix);
+}
+
+/**
  * Send a message to the LLM and get a response.
  * This is the main async function called from C#.
  *
@@ -155,6 +438,9 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
     if (!isConfigured || !currentConfig.apiKey) {
         return '[Agent] Not configured. Please set API key first via the Settings panel.';
     }
+
+    // ---- Compress big strings in PREVIOUS history before adding new message ----
+    compressHistoryMessages();
 
     // Add user message to history (with optional image)
     if (imageBase64 && imageMimeType) {
@@ -198,24 +484,36 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
             ...createScreenshotTools(),
             ...createTypeReflectionTools(),
             ...createEvalTools(),
+            ...createRetrieveBigStringTool(),
         };
 
         const result = await generateText({
             model,
-            system: currentConfig.systemPrompt,
+            system: buildSystemPrompt(),
             messages: conversationHistory,
             tools,
             stopWhen: stepCountIs(25),
             prepareStep({ messages, stepNumber }) {
                 if (stepNumber === 0) return undefined;
 
-                // Scan the last tool message for screenshot images.
+                // ---- (1) Compress big strings in OLDER messages ----
+                // Skip the last 2 messages (the assistant tool-call + tool result
+                // from the most recent step) so the model can see the fresh result.
+                const { messages: compressed, replaced } = compressMessages(messages, 2);
+                let newMessages = replaced > 0 ? compressed : [...messages];
+                if (replaced > 0) {
+                    console.log(`[Agent] prepareStep(${stepNumber}): compressed ${replaced} big strings (store size: ${bigStringStore.size})`);
+                }
+
+                // ---- (2) Extract screenshot images from the last tool message ----
                 // The Chat Completions API converter JSON.stringifies content-type
                 // tool outputs (including file-data images), so the model cannot
                 // "see" them. We extract such images and append a user message
                 // with proper image parts that the converter handles correctly.
-                const lastMsg = messages[messages.length - 1];
-                if (!lastMsg || lastMsg.role !== 'tool') return undefined;
+                const lastMsg = newMessages[newMessages.length - 1];
+                if (!lastMsg || lastMsg.role !== 'tool') {
+                    return replaced > 0 ? { messages: newMessages } : undefined;
+                }
 
                 const imageParts: Array<any> = [];
                 const patchedContent: any[] = [];
@@ -256,8 +554,7 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
                 }
 
                 if (imageParts.length > 0) {
-                    console.log(`[Agent] prepareStep: injecting ${imageParts.length} screenshot image(s) as user message`);
-                    const newMessages = [...messages];
+                    console.log(`[Agent] prepareStep(${stepNumber}): injecting ${imageParts.length} screenshot image(s) as user message`);
                     // Replace the tool message with patched (image-stripped) version
                     newMessages[newMessages.length - 1] = {
                         role: 'tool',
@@ -274,10 +571,9 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
                             },
                         ],
                     } as any);
-                    return { messages: newMessages };
                 }
 
-                return undefined;
+                return { messages: newMessages };
             },
         });
 
@@ -303,6 +599,8 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
  */
 export function clearHistory(): void {
     conversationHistory = [];
+    compressedUpToIndex = 0;
+    bigStringStore.clear();
     console.log('[Agent] Conversation history cleared.');
 }
 

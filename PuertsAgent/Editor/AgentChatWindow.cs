@@ -28,13 +28,11 @@ namespace LLMAgent.Editor
         private string apiKey = "";
         private string baseURL = "";
         private string model = "gpt-4o-mini";
-        private string systemPrompt = "You are a helpful AI assistant running inside Unity Editor. You can help with game development, scripting, and general questions. Be concise and practical.";
 
         // EditorPrefs keys for persistence
         private const string PrefKeyApiKey = "LLMAgent_ApiKey";
         private const string PrefKeyBaseURL = "LLMAgent_BaseURL";
         private const string PrefKeyModel = "LLMAgent_Model";
-        private const string PrefKeySystemPrompt = "LLMAgent_SystemPrompt";
 
         private const string InputControlName = "AgentChatInput";
 
@@ -98,8 +96,6 @@ namespace LLMAgent.Editor
             apiKey = EditorPrefs.GetString(PrefKeyApiKey, "");
             baseURL = EditorPrefs.GetString(PrefKeyBaseURL, "");
             model = EditorPrefs.GetString(PrefKeyModel, "gpt-4o-mini");
-            systemPrompt = EditorPrefs.GetString(PrefKeySystemPrompt,
-                "You are a helpful AI assistant running inside Unity Editor. You can help with game development, scripting, and general questions. Be concise and practical.");
         }
 
         private void SaveSettings()
@@ -107,7 +103,6 @@ namespace LLMAgent.Editor
             EditorPrefs.SetString(PrefKeyApiKey, apiKey);
             EditorPrefs.SetString(PrefKeyBaseURL, baseURL);
             EditorPrefs.SetString(PrefKeyModel, model);
-            EditorPrefs.SetString(PrefKeySystemPrompt, systemPrompt);
         }
 
         private void InitializeScriptManager()
@@ -123,7 +118,7 @@ namespace LLMAgent.Editor
             // Auto-configure if API key is available
             if (scriptManager.IsInitialized && !string.IsNullOrEmpty(apiKey))
             {
-                scriptManager.ConfigureAgent(apiKey, baseURL, model, systemPrompt);
+                scriptManager.ConfigureAgent(apiKey, baseURL, model);
             }
         }
 
@@ -533,12 +528,6 @@ namespace LLMAgent.Editor
             GUILayout.Label("Model", GUILayout.Width(90));
             model = EditorGUILayout.TextField(model, settingsFieldStyle);
             EditorGUILayout.EndHorizontal();
-            GUILayout.Space(2);
-
-            // System Prompt
-            GUILayout.Label("System Prompt", GUILayout.Width(90));
-            systemPrompt = EditorGUILayout.TextArea(systemPrompt, settingsFieldStyle, GUILayout.MinHeight(40), GUILayout.MaxHeight(80));
-
             GUILayout.Space(4);
 
             // Apply button
@@ -566,7 +555,7 @@ namespace LLMAgent.Editor
         {
             if (scriptManager != null && scriptManager.IsInitialized)
             {
-                string result = scriptManager.ConfigureAgent(apiKey, baseURL, model, systemPrompt);
+                string result = scriptManager.ConfigureAgent(apiKey, baseURL, model);
                 messages.Add(new ChatMessage
                 {
                     Text = result,

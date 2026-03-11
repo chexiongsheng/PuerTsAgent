@@ -39067,10 +39067,86 @@ function createEvalTools() {
 __name(createEvalTools, "createEvalTools");
 
 // src/agent/agent-core.mts
-var DEFAULT_CONFIG = {
-  apiKey: "",
-  model: "gpt-4o-mini",
-  systemPrompt: `You are a helpful AI assistant running inside Unity via PuerTS (a TypeScript/JavaScript runtime for Unity). You can help with game development, scripting, and general questions. Be concise and practical.
+function randomSuffix(len = 5) {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let result2 = "";
+  for (let i2 = 0; i2 < len; i2++) {
+    result2 += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return result2;
+}
+__name(randomSuffix, "randomSuffix");
+var BigStringStore = class {
+  static {
+    __name(this, "BigStringStore");
+  }
+  entries = [];
+  /** Unique prefix for placeholders in this session, e.g. "bigstr_a3f9x". */
+  prefix;
+  /** Prefix for non-retrievable image placeholders, e.g. "image_a3f9x". */
+  imagePrefix;
+  constructor() {
+    const suffix = randomSuffix(5);
+    this.prefix = `bigstr_${suffix}`;
+    this.imagePrefix = `image_${suffix}`;
+  }
+  /** Store a string and return its index. */
+  store(content, contentType, nonRetrievable = false) {
+    const index = this.entries.length;
+    this.entries.push({ content, length: content.length, contentType, nonRetrievable });
+    return index;
+  }
+  /** Build a placeholder string for a stored entry. */
+  placeholder(index, length, contentType, nonRetrievable) {
+    if (nonRetrievable) {
+      return `${this.imagePrefix}(${index}, ${length})`;
+    }
+    return `${this.prefix}(${index}, ${length}, "${contentType}")`;
+  }
+  /** Retrieve a stored string by index. Returns null if not found or non-retrievable. */
+  retrieve(index) {
+    if (index < 0 || index >= this.entries.length) return null;
+    const entry = this.entries[index];
+    if (entry.nonRetrievable) return null;
+    return { content: entry.content, contentType: entry.contentType };
+  }
+  /** Get entry metadata without content. */
+  getMeta(index) {
+    if (index < 0 || index >= this.entries.length) return null;
+    const { length, contentType, nonRetrievable } = this.entries[index];
+    return { length, contentType, nonRetrievable };
+  }
+  /** Clear all stored entries and regenerate prefix. */
+  clear() {
+    this.entries = [];
+    const suffix = randomSuffix(5);
+    this.prefix = `bigstr_${suffix}`;
+    this.imagePrefix = `image_${suffix}`;
+  }
+  get size() {
+    return this.entries.length;
+  }
+};
+var bigStringStore = new BigStringStore();
+var BIG_STRING_THRESHOLD = 500;
+var SYSTEM_PROMPT = `You are a helpful AI assistant running inside Unity via PuerTS (a TypeScript/JavaScript runtime for Unity). You can help with game development, scripting, and general questions. Be concise and practical.
+
+## Context Compression \u2014 Placeholder System
+
+To save context space, large strings in **past** tool calls (both request parameters
+and results) are automatically replaced with compact placeholders.
+The placeholder prefixes are unique per session and will be told to you here:
+
+- \`{BIGSTR_PREFIX}(index, length, "type")\` \u2013 a text string that was replaced.
+  \`index\` is the storage slot, \`length\` is the original character count,
+  and \`type\` describes the content (e.g. "code", "eval_result").
+  **You can retrieve the original content** by calling the \`retrieveBigString\` tool with the index.
+  Only retrieve it when you genuinely need the exact content \u2014 in most cases the
+  surrounding context is enough.
+
+- \`{IMAGE_PREFIX}(index, length)\` \u2013 a base64-encoded image that was replaced.
+  These **cannot** be retrieved as text. If you need to see the screenshot again,
+  call the \`captureScreenshot\` tool to take a fresh one.
 
 ## PuerTS: JS \u2194 C# Interop Rules
 
@@ -39167,11 +39243,124 @@ You are running in a PuerTS environment. Below are the rules for interacting bet
 ### Important Notes
 - The \`CS\` global object is always available in the PuerTS JS environment for accessing any C# type.
 - The \`puer\` global object provides PuerTS helper APIs: \`$ref\`, \`$unref\`, \`$generic\`, \`$typeof\`, \`$promise\`.
-`
+`;
+var DEFAULT_CONFIG = {
+  apiKey: "",
+  model: "gpt-4o-mini"
 };
 var conversationHistory = [];
 var currentConfig = { ...DEFAULT_CONFIG };
 var isConfigured = false;
+function inferContentType(key, _value) {
+  if (key === "code") return "code";
+  if (key === "result") return "eval_result";
+  if (key === "stack") return "stack_trace";
+  if (key === "error") return "error";
+  if (key === "data" || key === "base64" || key === "image") return "image_base64";
+  return "text";
+}
+__name(inferContentType, "inferContentType");
+function replaceBigStrings(obj, parentKey = "") {
+  if (obj === null || obj === void 0) return obj;
+  if (typeof obj === "string") {
+    if (obj.length >= BIG_STRING_THRESHOLD) {
+      const ctype = inferContentType(parentKey, obj);
+      const isImage = ctype === "image_base64";
+      const idx = bigStringStore.store(obj, ctype, isImage);
+      return bigStringStore.placeholder(idx, obj.length, ctype, isImage);
+    }
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    const out = new Array(obj.length);
+    for (let i2 = 0; i2 < obj.length; i2++) {
+      out[i2] = replaceBigStrings(obj[i2], parentKey);
+    }
+    return out;
+  }
+  if (typeof obj === "object") {
+    const out = {};
+    for (const key of Object.keys(obj)) {
+      out[key] = replaceBigStrings(obj[key], key);
+    }
+    return out;
+  }
+  return obj;
+}
+__name(replaceBigStrings, "replaceBigStrings");
+function compressMessage(msg) {
+  try {
+    const compressed = replaceBigStrings(msg);
+    return compressed;
+  } catch {
+    return msg;
+  }
+}
+__name(compressMessage, "compressMessage");
+function compressMessages(messages, skipTail = 0) {
+  const end = messages.length - skipTail;
+  let replaced = 0;
+  const result2 = new Array(messages.length);
+  const storeSizeBefore = bigStringStore.size;
+  for (let i2 = 0; i2 < messages.length; i2++) {
+    if (i2 < end) {
+      result2[i2] = compressMessage(messages[i2]);
+    } else {
+      result2[i2] = messages[i2];
+    }
+  }
+  replaced = bigStringStore.size - storeSizeBefore;
+  return { messages: result2, replaced };
+}
+__name(compressMessages, "compressMessages");
+var compressedUpToIndex = 0;
+function compressHistoryMessages() {
+  const end = conversationHistory.length;
+  if (compressedUpToIndex >= end) return;
+  let replacedCount = 0;
+  for (let i2 = compressedUpToIndex; i2 < end; i2++) {
+    const storeBefore = bigStringStore.size;
+    conversationHistory[i2] = compressMessage(conversationHistory[i2]);
+    if (bigStringStore.size > storeBefore) replacedCount++;
+  }
+  compressedUpToIndex = end;
+  if (replacedCount > 0) {
+    console.log(`[Agent] Compressed ${replacedCount} history messages (bigStringStore size: ${bigStringStore.size})`);
+  }
+}
+__name(compressHistoryMessages, "compressHistoryMessages");
+function createRetrieveBigStringTool() {
+  return {
+    retrieveBigString: tool({
+      description: "Retrieve the original content of a compressed placeholder. In conversation history, large strings are automatically replaced with placeholders to save context space. Call this tool with the index from the placeholder to get the full original text. Note: image placeholders CANNOT be retrieved \u2014 take a new screenshot instead.",
+      inputSchema: external_exports.object({
+        index: external_exports.number().int().min(0).describe('The index from the placeholder, e.g. for bigstr_xxxxx(3, 1200, "code"), index is 3.')
+      }),
+      execute: /* @__PURE__ */ __name(async ({ index }) => {
+        const result2 = bigStringStore.retrieve(index);
+        if (!result2) {
+          const meta3 = bigStringStore.getMeta(index);
+          if (meta3?.nonRetrievable) {
+            return {
+              success: false,
+              error: `Entry ${index} is a non-retrievable ${meta3.contentType} (${meta3.length} chars). If it's an image, take a new screenshot instead.`
+            };
+          }
+          return {
+            success: false,
+            error: `No entry found at index ${index}. Valid range: 0-${bigStringStore.size - 1}.`
+          };
+        }
+        return {
+          success: true,
+          contentType: result2.contentType,
+          content: result2.content
+        };
+      }, "execute")
+    })
+  };
+}
+__name(createRetrieveBigStringTool, "createRetrieveBigStringTool");
 function configure(config2) {
   currentConfig = { ...DEFAULT_CONFIG, ...config2 };
   if (!currentConfig.apiKey) {
@@ -39183,10 +39372,15 @@ function configure(config2) {
   return `[Agent] Configured successfully. Model: ${currentConfig.model}`;
 }
 __name(configure, "configure");
+function buildSystemPrompt() {
+  return SYSTEM_PROMPT.replace(/\{BIGSTR_PREFIX\}/g, bigStringStore.prefix).replace(/\{IMAGE_PREFIX\}/g, bigStringStore.imagePrefix);
+}
+__name(buildSystemPrompt, "buildSystemPrompt");
 async function sendMessage(userMessage, imageBase64, imageMimeType) {
   if (!isConfigured || !currentConfig.apiKey) {
     return "[Agent] Not configured. Please set API key first via the Settings panel.";
   }
+  compressHistoryMessages();
   if (imageBase64 && imageMimeType) {
     console.log(`[Agent] Message includes attached image (${imageMimeType}, ${imageBase64.length} base64 chars)`);
     conversationHistory.push({
@@ -39219,18 +39413,26 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
       ...createUnityLogTools(),
       ...createScreenshotTools(),
       ...createTypeReflectionTools(),
-      ...createEvalTools()
+      ...createEvalTools(),
+      ...createRetrieveBigStringTool()
     };
     const result2 = await generateText({
       model,
-      system: currentConfig.systemPrompt,
+      system: buildSystemPrompt(),
       messages: conversationHistory,
       tools,
       stopWhen: stepCountIs(25),
       prepareStep({ messages, stepNumber }) {
         if (stepNumber === 0) return void 0;
-        const lastMsg = messages[messages.length - 1];
-        if (!lastMsg || lastMsg.role !== "tool") return void 0;
+        const { messages: compressed, replaced } = compressMessages(messages, 2);
+        let newMessages = replaced > 0 ? compressed : [...messages];
+        if (replaced > 0) {
+          console.log(`[Agent] prepareStep(${stepNumber}): compressed ${replaced} big strings (store size: ${bigStringStore.size})`);
+        }
+        const lastMsg = newMessages[newMessages.length - 1];
+        if (!lastMsg || lastMsg.role !== "tool") {
+          return replaced > 0 ? { messages: newMessages } : void 0;
+        }
         const imageParts = [];
         const patchedContent = [];
         for (const part of lastMsg.content) {
@@ -39260,8 +39462,7 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
           }
         }
         if (imageParts.length > 0) {
-          console.log(`[Agent] prepareStep: injecting ${imageParts.length} screenshot image(s) as user message`);
-          const newMessages = [...messages];
+          console.log(`[Agent] prepareStep(${stepNumber}): injecting ${imageParts.length} screenshot image(s) as user message`);
           newMessages[newMessages.length - 1] = {
             role: "tool",
             content: patchedContent
@@ -39276,9 +39477,8 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
               }
             ]
           });
-          return { messages: newMessages };
         }
-        return void 0;
+        return { messages: newMessages };
       }
     });
     for (const msg of result2.response.messages) {
@@ -39295,6 +39495,8 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
 __name(sendMessage, "sendMessage");
 function clearHistory() {
   conversationHistory = [];
+  compressedUpToIndex = 0;
+  bigStringStore.clear();
   console.log("[Agent] Conversation history cleared.");
 }
 __name(clearHistory, "clearHistory");
@@ -39311,12 +39513,11 @@ __name(getIsConfigured, "getIsConfigured");
 console.log("[Agent] LLM Agent initialized.");
 CS.LLMAgent.UnityLogBridge.StartListening();
 console.log("[Agent] LLM Agent module loaded.");
-function configureAgent(apiKey, baseURL, model, systemPrompt) {
+function configureAgent(apiKey, baseURL, model) {
   return configure({
     apiKey,
     baseURL: baseURL || void 0,
-    model: model || void 0,
-    systemPrompt: systemPrompt || void 0
+    model: model || void 0
   });
 }
 __name(configureAgent, "configureAgent");

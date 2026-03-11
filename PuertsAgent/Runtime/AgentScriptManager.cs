@@ -21,7 +21,7 @@ namespace LLMAgent
         private bool isTicking;
 
         // TS function delegates
-        private Func<string, string, string, string, string> configureAgent;
+        private Func<string, string, string, string> configureAgent;
         private Action<string, string, string, Action<string, bool>> onMessageReceived;
         private Func<string, string> onMessageSync;
         private Action onClearHistory;
@@ -73,7 +73,7 @@ namespace LLMAgent
                 ScriptObject moduleExports = scriptEnv.ExecuteModule(EntryModule);
 
                 // Get exported functions from TS module
-                configureAgent = moduleExports.Get<Func<string, string, string, string, string>>("configureAgent");
+                configureAgent = moduleExports.Get<Func<string, string, string, string>>("configureAgent");
                 onMessageReceived = moduleExports.Get<Action<string, string, string, Action<string, bool>>>("onMessageReceived");
                 onMessageSync = moduleExports.Get<Func<string, string>>("onMessageSync");
                 onClearHistory = moduleExports.Get<Action>("onClearHistory");
@@ -160,7 +160,7 @@ namespace LLMAgent
         /// <summary>
         /// Configure the agent with API settings.
         /// </summary>
-        public string ConfigureAgent(string apiKey, string baseURL = "", string model = "", string systemPrompt = "")
+        public string ConfigureAgent(string apiKey, string baseURL = "", string model = "")
         {
             if (!isInitialized || configureAgent == null)
             {
@@ -169,7 +169,7 @@ namespace LLMAgent
 
             try
             {
-                return configureAgent(apiKey, baseURL, model, systemPrompt);
+                return configureAgent(apiKey, baseURL, model);
             }
             catch (Exception ex)
             {
