@@ -39149,20 +39149,6 @@ You are running in a PuerTS environment. Below are the rules for interacting bet
    Console.WriteLine(Add3(1)); // 4
    \`\`\`
 
-4. **JS MonoBehaviour pattern**: Combine delegates with MonoBehaviour lifecycle. C# exposes Action fields (JsStart, JsUpdate, JsOnDestroy), JS assigns functions to them.
-   \`\`\`js
-   // JS side
-   class Rotate {
-       constructor(bindTo) {
-           this.bindTo = bindTo;
-           this.bindTo.JsUpdate = () => this.onUpdate();
-           this.bindTo.JsOnDestroy = () => this.onDestroy();
-       }
-       onUpdate() { console.log("update..."); }
-       onDestroy() { console.log("onDestroy..."); }
-   }
-   \`\`\`
-
 ### Important Notes
 - If a delegate has value-type parameters, you need to add \`UsingAction\` or \`UsingFunc\` declarations (see PuerTS FAQ).
 - The \`CS\` global object is always available in the PuerTS JS environment for accessing any C# type.
@@ -39330,11 +39316,7 @@ __name(getIsConfigured, "getIsConfigured");
 
 // src/main.mts
 console.log("[Agent] LLM Agent initialized.");
-try {
-  CS.LLMAgent.UnityLogBridge.StartListening();
-} catch (e2) {
-  console.warn(`[Agent] Failed to start UnityLogBridge: ${e2}`);
-}
+CS.LLMAgent.UnityLogBridge.StartListening();
 console.log("[Agent] LLM Agent module loaded.");
 function configureAgent(apiKey, baseURL, model, systemPrompt) {
   return configure({
