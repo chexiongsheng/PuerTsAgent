@@ -39112,19 +39112,34 @@ You are running in a PuerTS environment. Below are the rules for interacting bet
    go.AddComponent(puer.$typeof(CS.UnityEngine.ParticleSystem));
    \`\`\`
 
-6. **Operator overloading**: JS does not support operator overloading; use \`op_Xxx\` methods instead.
+6. **Array & Indexer access (C# \`[]\` operator)**: C#'s \`[]\` operator does **NOT** map to JS \`[]\`. You must use \`get_Item(index)\` / \`set_Item(index, value)\` methods instead. This applies to C# arrays, Lists, Dictionaries, and any type with an indexer.
+   \`\`\`js
+   // Create a C# array
+   let arr = CS.System.Array.CreateInstance(puer.$typeof(CS.System.Int32), 3);
+   arr.set_Item(0, 42);       // arr[0] = 42 in C#
+   let val = arr.get_Item(0); // val = arr[0] in C#
+
+   // Same for List<T>, Dictionary<K,V>, etc.
+   let List = puer.$generic(CS.System.Collections.Generic.List$1, CS.System.Int32);
+   let lst = new List();
+   lst.Add(10);
+   let first = lst.get_Item(0); // first = lst[0] in C#
+   lst.set_Item(0, 20);         // lst[0] = 20 in C#
+   \`\`\`
+
+7. **Operator overloading**: JS does not support operator overloading; use \`op_Xxx\` methods instead.
    \`\`\`js
    let ret = CS.UnityEngine.Vector3.op_Multiply(CS.UnityEngine.Vector3.up, 1600);
    // (0.0, 1600.0, 0.0)
    \`\`\`
 
-7. **Async / Task**: Wrap C# Task with \`puer.$promise()\` to await in JS.
+8. **Async / Task**: Wrap C# Task with \`puer.$promise()\` to await in JS.
    \`\`\`js
    let task = obj.GetFileLengthAsync("path");
    let result = await puer.$promise(task);
    \`\`\`
 
-8. **console.log**: In PuerTS, \`console.log\` is intercepted and internally calls \`UnityEngine.Debug.Log\`.
+9. **console.log**: In PuerTS, \`console.log\` is intercepted and internally calls \`UnityEngine.Debug.Log\`.
 
 ### C# Calling JS
 
