@@ -39137,14 +39137,14 @@ To save context space, large strings in **past** tool calls (both request parame
 and results) are automatically replaced with compact placeholders.
 The placeholder prefixes are unique per session and will be told to you here:
 
-- \`{BIGSTR_PREFIX}(index, length, "type")\` \u2013 a text string that was replaced.
+- \`{BIGSTR_PREFIX}(index, length, "type")\` - a text string that was replaced.
   \`index\` is the storage slot, \`length\` is the original character count,
   and \`type\` describes the content (e.g. "code", "eval_result").
   **You can retrieve the original content** by calling the \`retrieveBigString\` tool with the index.
   Only retrieve it when you genuinely need the exact content \u2014 in most cases the
   surrounding context is enough.
 
-- \`{IMAGE_PREFIX}(index, length)\` \u2013 a base64-encoded image that was replaced.
+- \`{IMAGE_PREFIX}(index, length)\` - a base64-encoded image that was replaced.
   These **cannot** be retrieved as text. If you need to see the screenshot again,
   call the \`captureScreenshot\` tool to take a fresh one.
 
