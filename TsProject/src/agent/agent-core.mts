@@ -99,11 +99,43 @@ let bigStringStore = new BigStringStore();
  */
 const BIG_STRING_THRESHOLD = 500;
 
+// ============================================================
+// Token estimation & sliding window constants
+// ============================================================
+
+/**
+ * Approximate ratio of characters to tokens for English/code mixed content.
+ * Used as a fallback when precise token counts are unavailable.
+ */
+const CHARS_PER_TOKEN = 4;
+
+/**
+ * Maximum input token budget. When the estimated (or actual) input token count
+ * exceeds this value, older messages are trimmed.
+ * Default: 600 000 tokens (safe for most 1M-context models).
+ */
+const MAX_INPUT_TOKENS = 600_000;
+
+/**
+ * Minimum number of recent messages to always keep, even during aggressive trimming.
+ * This protects the current user request + the most recent assistant/tool exchanges.
+ */
+const MIN_KEEP_MESSAGES = 6;
+
+/**
+ * Character budget for the summary of trimmed messages.
+ * The summary prompt instructs the LLM to stay within this limit.
+ */
+const SUMMARY_MAX_CHARS = 2000;
+
 // Agent configuration interface
 export interface AgentConfig {
     apiKey: string;
     baseURL?: string;
     model?: string;
+    /** Optional: a cheaper / faster model ID used for summarizing trimmed history.
+     *  If not set, the main model is used. */
+    summaryModel?: string;
 }
 
 /** System prompt is managed entirely by the TS side and cannot be overridden from C#. */
@@ -234,6 +266,13 @@ let conversationHistory: ModelMessage[] = [];
 let currentConfig: AgentConfig = { ...DEFAULT_CONFIG };
 let isConfigured = false;
 
+/**
+ * Stores the summary of previously trimmed messages, if any.
+ * This is prepended to the messages when sending to the LLM so the agent
+ * doesn't completely "forget" earlier context.
+ */
+let historySummary: string | null = null;
+
 // ============================================================
 // History compression – replace big strings with placeholders
 // ============================================================
@@ -352,6 +391,167 @@ function compressHistoryMessages(): void {
 }
 
 // ============================================================
+// Token estimation helpers
+// ============================================================
+
+/**
+ * Estimate the token count for a messages array by serializing to JSON
+ * and dividing by CHARS_PER_TOKEN.
+ */
+function estimateTokens(messages: any[]): number {
+    let totalChars = 0;
+    for (const msg of messages) {
+        totalChars += JSON.stringify(msg).length;
+    }
+    return Math.ceil(totalChars / CHARS_PER_TOKEN);
+}
+
+// ============================================================
+// History summarization
+// ============================================================
+
+/**
+ * Summarize an array of messages into a short paragraph using the LLM.
+ * Returns a summary string, or null if summarization fails.
+ */
+async function summarizeMessages(messages: any[]): Promise<string | null> {
+    if (!isConfigured || !currentConfig.apiKey) return null;
+
+    try {
+        const provider = createOpenAI({
+            apiKey: currentConfig.apiKey,
+            baseURL: currentConfig.baseURL,
+        });
+
+        const modelId = currentConfig.summaryModel || currentConfig.model || 'gpt-4o-mini';
+        const model = provider.chat(modelId);
+
+        // Build a simplified text representation of the messages to summarize
+        let conversationText = '';
+        for (const msg of messages) {
+            const role = (msg as any).role || 'unknown';
+            let text = '';
+            const content = (msg as any).content;
+            if (typeof content === 'string') {
+                text = content;
+            } else if (Array.isArray(content)) {
+                // Extract text parts only
+                for (const part of content) {
+                    if (typeof part === 'string') {
+                        text += part + '\n';
+                    } else if (part?.type === 'text' && part.text) {
+                        text += part.text + '\n';
+                    } else if (part?.type === 'tool-call') {
+                        text += `[Tool call: ${part.toolName}]\n`;
+                    } else if (part?.type === 'tool-result') {
+                        text += `[Tool result: ${part.toolName}]\n`;
+                    }
+                }
+            }
+            // Truncate extremely long individual messages
+            if (text.length > 1000) {
+                text = text.substring(0, 1000) + '... (truncated)';
+            }
+            conversationText += `[${role}]: ${text}\n`;
+        }
+
+        // Limit total input to the summarizer
+        if (conversationText.length > 20000) {
+            conversationText = conversationText.substring(0, 20000) + '\n... (further content omitted)';
+        }
+
+        const result = await generateText({
+            model,
+            system: 'You are a concise summarizer. Summarize the following conversation history into a brief paragraph. ' +
+                     'Focus on: what the user wanted to accomplish, what actions were taken (tools called, code executed), ' +
+                     'key results or errors encountered, and the current state. ' +
+                     `Keep the summary under ${SUMMARY_MAX_CHARS} characters. Do NOT include code blocks. ` +
+                     'Write in the same language the user used.',
+            prompt: conversationText,
+            maxRetries: 1,
+        });
+
+        const summary = result.text?.trim();
+        if (summary && summary.length > 0) {
+            console.log(`[Agent] Generated history summary (${summary.length} chars)`);
+            return summary;
+        }
+    } catch (err: any) {
+        console.error(`[Agent] Failed to generate summary: ${err.message || err}`);
+    }
+    return null;
+}
+
+// ============================================================
+// Sliding window with summarization
+// ============================================================
+
+/**
+ * Trim a messages array so that the estimated token count is within budget.
+ * Removed messages are optionally summarized.
+ *
+ * @param messages    The full messages array
+ * @param tokenBudget Maximum tokens allowed
+ * @param doSummarize Whether to call the LLM to summarize trimmed messages
+ * @returns The trimmed messages array (may include a summary message at the start)
+ */
+async function trimMessagesByTokenBudget(
+    messages: any[],
+    tokenBudget: number,
+    doSummarize: boolean = true,
+): Promise<{ messages: any[]; trimmed: boolean }> {
+    const estimated = estimateTokens(messages);
+    if (estimated <= tokenBudget) {
+        return { messages, trimmed: false };
+    }
+
+    console.log(`[Agent] Token estimate ${estimated} exceeds budget ${tokenBudget}, trimming...`);
+
+    // Binary-ish search: find the minimum number of messages to keep from the end
+    // such that the estimated tokens are within budget.
+    // Always keep at least MIN_KEEP_MESSAGES.
+    let keepFromEnd = Math.min(MIN_KEEP_MESSAGES, messages.length);
+    const targetTokens = tokenBudget * 0.8; // trim aggressively to 80% to avoid repeated trims
+
+    // Start from keeping MIN_KEEP_MESSAGES and increase if still within budget
+    while (keepFromEnd < messages.length) {
+        const candidate = messages.slice(messages.length - keepFromEnd);
+        if (estimateTokens(candidate) > targetTokens) {
+            // Even this many is too much, keep previous amount
+            keepFromEnd = Math.max(keepFromEnd - 1, MIN_KEEP_MESSAGES);
+            break;
+        }
+        keepFromEnd++;
+    }
+
+    const keptMessages = messages.slice(messages.length - keepFromEnd);
+    const removedMessages = messages.slice(0, messages.length - keepFromEnd);
+
+    console.log(`[Agent] Trimming: removing ${removedMessages.length} messages, keeping ${keptMessages.length}`);
+
+    // Summarize removed messages
+    let summaryMsg: any | null = null;
+    if (doSummarize && removedMessages.length > 0) {
+        const previousSummary = historySummary;
+        const toSummarize = previousSummary
+            ? [{ role: 'user', content: `[Previous summary]: ${previousSummary}` }, ...removedMessages]
+            : removedMessages;
+
+        const summary = await summarizeMessages(toSummarize);
+        if (summary) {
+            historySummary = summary;
+            summaryMsg = {
+                role: 'user' as const,
+                content: `[Context Summary - the following is a summary of earlier conversation that was trimmed to save context space]:\n${summary}`,
+            };
+        }
+    }
+
+    const result = summaryMsg ? [summaryMsg, ...keptMessages] : keptMessages;
+    return { messages: result, trimmed: true };
+}
+
+// ============================================================
 // retrieveBigString tool
 // ============================================================
 
@@ -442,6 +642,20 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
     // ---- Compress big strings in PREVIOUS history before adding new message ----
     compressHistoryMessages();
 
+    // ---- Sliding window: trim conversationHistory if too long (cross-round) ----
+    {
+        const estimated = estimateTokens(conversationHistory);
+        if (estimated > MAX_INPUT_TOKENS) {
+            const { messages: trimmed, trimmed: didTrim } = await trimMessagesByTokenBudget(
+                conversationHistory, MAX_INPUT_TOKENS, /* doSummarize */ true
+            );
+            if (didTrim) {
+                conversationHistory = trimmed as ModelMessage[];
+                compressedUpToIndex = conversationHistory.length; // already compressed
+            }
+        }
+    }
+
     // Add user message to history (with optional image)
     if (imageBase64 && imageMimeType) {
         console.log(`[Agent] Message includes attached image (${imageMimeType}, ${imageBase64.length} base64 chars)`);
@@ -493,7 +707,7 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
             messages: conversationHistory,
             tools,
             stopWhen: stepCountIs(25),
-            prepareStep({ messages, stepNumber }) {
+            prepareStep({ messages, stepNumber, steps }) {
                 if (stepNumber === 0) return undefined;
 
                 // ---- (1) Compress big strings in OLDER messages ----
@@ -503,6 +717,45 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
                 let newMessages = replaced > 0 ? compressed : [...messages];
                 if (replaced > 0) {
                     console.log(`[Agent] prepareStep(${stepNumber}): compressed ${replaced} big strings (store size: ${bigStringStore.size})`);
+                }
+
+                // ---- (1.5) Sliding window: check actual token usage from last step ----
+                // Use the real inputTokens from the previous step if available.
+                const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
+                const lastInputTokens = lastStep?.usage?.inputTokens;
+                if (lastInputTokens && lastInputTokens > MAX_INPUT_TOKENS) {
+                    console.log(`[Agent] prepareStep(${stepNumber}): last step used ${lastInputTokens} input tokens, exceeds ${MAX_INPUT_TOKENS}, trimming...`);
+                    // Synchronous trim without summarization (we're inside prepareStep,
+                    // can't easily await an LLM call without blocking the step loop).
+                    // Keep MIN_KEEP_MESSAGES from the end.
+                    const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
+                    const trimmedMsgs = newMessages.slice(newMessages.length - keep);
+
+                    // Prepend existing summary if available
+                    if (historySummary) {
+                        trimmedMsgs.unshift({
+                            role: 'user' as const,
+                            content: `[Context Summary - the following is a summary of earlier conversation that was trimmed to save context space]:\n${historySummary}`,
+                        } as any);
+                    }
+                    newMessages = trimmedMsgs;
+                    console.log(`[Agent] prepareStep(${stepNumber}): trimmed to ${newMessages.length} messages`);
+                } else {
+                    // Fallback: estimate from serialized size
+                    const estimatedTokens = estimateTokens(newMessages);
+                    if (estimatedTokens > MAX_INPUT_TOKENS) {
+                        console.log(`[Agent] prepareStep(${stepNumber}): estimated ${estimatedTokens} tokens, exceeds ${MAX_INPUT_TOKENS}, trimming...`);
+                        const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
+                        const trimmedMsgs = newMessages.slice(newMessages.length - keep);
+                        if (historySummary) {
+                            trimmedMsgs.unshift({
+                                role: 'user' as const,
+                                content: `[Context Summary - the following is a summary of earlier conversation that was trimmed to save context space]:\n${historySummary}`,
+                            } as any);
+                        }
+                        newMessages = trimmedMsgs;
+                        console.log(`[Agent] prepareStep(${stepNumber}): trimmed to ${newMessages.length} messages`);
+                    }
                 }
 
                 // ---- (2) Extract screenshot images from the last tool message ----
@@ -601,6 +854,7 @@ export function clearHistory(): void {
     conversationHistory = [];
     compressedUpToIndex = 0;
     bigStringStore.clear();
+    historySummary = null;
     console.log('[Agent] Conversation history cleared.');
 }
 

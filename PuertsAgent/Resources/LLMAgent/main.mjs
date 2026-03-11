@@ -39129,6 +39129,10 @@ var BigStringStore = class {
 };
 var bigStringStore = new BigStringStore();
 var BIG_STRING_THRESHOLD = 500;
+var CHARS_PER_TOKEN = 4;
+var MAX_INPUT_TOKENS = 6e5;
+var MIN_KEEP_MESSAGES = 6;
+var SUMMARY_MAX_CHARS = 2e3;
 var SYSTEM_PROMPT = `You are a helpful AI assistant running inside Unity via PuerTS (a TypeScript/JavaScript runtime for Unity). You can help with game development, scripting, and general questions. Be concise and practical.
 
 ## Context Compression \u2014 Placeholder System
@@ -39251,6 +39255,7 @@ var DEFAULT_CONFIG = {
 var conversationHistory = [];
 var currentConfig = { ...DEFAULT_CONFIG };
 var isConfigured = false;
+var historySummary = null;
 function inferContentType(key, _value) {
   if (key === "code") return "code";
   if (key === "result") return "eval_result";
@@ -39329,6 +39334,108 @@ function compressHistoryMessages() {
   }
 }
 __name(compressHistoryMessages, "compressHistoryMessages");
+function estimateTokens(messages) {
+  let totalChars = 0;
+  for (const msg of messages) {
+    totalChars += JSON.stringify(msg).length;
+  }
+  return Math.ceil(totalChars / CHARS_PER_TOKEN);
+}
+__name(estimateTokens, "estimateTokens");
+async function summarizeMessages(messages) {
+  if (!isConfigured || !currentConfig.apiKey) return null;
+  try {
+    const provider = createOpenAI({
+      apiKey: currentConfig.apiKey,
+      baseURL: currentConfig.baseURL
+    });
+    const modelId = currentConfig.summaryModel || currentConfig.model || "gpt-4o-mini";
+    const model = provider.chat(modelId);
+    let conversationText = "";
+    for (const msg of messages) {
+      const role = msg.role || "unknown";
+      let text2 = "";
+      const content = msg.content;
+      if (typeof content === "string") {
+        text2 = content;
+      } else if (Array.isArray(content)) {
+        for (const part of content) {
+          if (typeof part === "string") {
+            text2 += part + "\n";
+          } else if (part?.type === "text" && part.text) {
+            text2 += part.text + "\n";
+          } else if (part?.type === "tool-call") {
+            text2 += `[Tool call: ${part.toolName}]
+`;
+          } else if (part?.type === "tool-result") {
+            text2 += `[Tool result: ${part.toolName}]
+`;
+          }
+        }
+      }
+      if (text2.length > 1e3) {
+        text2 = text2.substring(0, 1e3) + "... (truncated)";
+      }
+      conversationText += `[${role}]: ${text2}
+`;
+    }
+    if (conversationText.length > 2e4) {
+      conversationText = conversationText.substring(0, 2e4) + "\n... (further content omitted)";
+    }
+    const result2 = await generateText({
+      model,
+      system: `You are a concise summarizer. Summarize the following conversation history into a brief paragraph. Focus on: what the user wanted to accomplish, what actions were taken (tools called, code executed), key results or errors encountered, and the current state. Keep the summary under ${SUMMARY_MAX_CHARS} characters. Do NOT include code blocks. Write in the same language the user used.`,
+      prompt: conversationText,
+      maxRetries: 1
+    });
+    const summary = result2.text?.trim();
+    if (summary && summary.length > 0) {
+      console.log(`[Agent] Generated history summary (${summary.length} chars)`);
+      return summary;
+    }
+  } catch (err) {
+    console.error(`[Agent] Failed to generate summary: ${err.message || err}`);
+  }
+  return null;
+}
+__name(summarizeMessages, "summarizeMessages");
+async function trimMessagesByTokenBudget(messages, tokenBudget, doSummarize = true) {
+  const estimated = estimateTokens(messages);
+  if (estimated <= tokenBudget) {
+    return { messages, trimmed: false };
+  }
+  console.log(`[Agent] Token estimate ${estimated} exceeds budget ${tokenBudget}, trimming...`);
+  let keepFromEnd = Math.min(MIN_KEEP_MESSAGES, messages.length);
+  const targetTokens = tokenBudget * 0.8;
+  while (keepFromEnd < messages.length) {
+    const candidate = messages.slice(messages.length - keepFromEnd);
+    if (estimateTokens(candidate) > targetTokens) {
+      keepFromEnd = Math.max(keepFromEnd - 1, MIN_KEEP_MESSAGES);
+      break;
+    }
+    keepFromEnd++;
+  }
+  const keptMessages = messages.slice(messages.length - keepFromEnd);
+  const removedMessages = messages.slice(0, messages.length - keepFromEnd);
+  console.log(`[Agent] Trimming: removing ${removedMessages.length} messages, keeping ${keptMessages.length}`);
+  let summaryMsg = null;
+  if (doSummarize && removedMessages.length > 0) {
+    const previousSummary = historySummary;
+    const toSummarize = previousSummary ? [{ role: "user", content: `[Previous summary]: ${previousSummary}` }, ...removedMessages] : removedMessages;
+    const summary = await summarizeMessages(toSummarize);
+    if (summary) {
+      historySummary = summary;
+      summaryMsg = {
+        role: "user",
+        content: `[Context Summary - the following is a summary of earlier conversation that was trimmed to save context space]:
+${summary}`
+      };
+    }
+  }
+  const result2 = summaryMsg ? [summaryMsg, ...keptMessages] : keptMessages;
+  return { messages: result2, trimmed: true };
+}
+__name(trimMessagesByTokenBudget, "trimMessagesByTokenBudget");
 function createRetrieveBigStringTool() {
   return {
     retrieveBigString: tool({
@@ -39381,6 +39488,21 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
     return "[Agent] Not configured. Please set API key first via the Settings panel.";
   }
   compressHistoryMessages();
+  {
+    const estimated = estimateTokens(conversationHistory);
+    if (estimated > MAX_INPUT_TOKENS) {
+      const { messages: trimmed, trimmed: didTrim } = await trimMessagesByTokenBudget(
+        conversationHistory,
+        MAX_INPUT_TOKENS,
+        /* doSummarize */
+        true
+      );
+      if (didTrim) {
+        conversationHistory = trimmed;
+        compressedUpToIndex = conversationHistory.length;
+      }
+    }
+  }
   if (imageBase64 && imageMimeType) {
     console.log(`[Agent] Message includes attached image (${imageMimeType}, ${imageBase64.length} base64 chars)`);
     conversationHistory.push({
@@ -39422,12 +39544,44 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
       messages: conversationHistory,
       tools,
       stopWhen: stepCountIs(25),
-      prepareStep({ messages, stepNumber }) {
+      prepareStep({ messages, stepNumber, steps }) {
         if (stepNumber === 0) return void 0;
         const { messages: compressed, replaced } = compressMessages(messages, 2);
         let newMessages = replaced > 0 ? compressed : [...messages];
         if (replaced > 0) {
           console.log(`[Agent] prepareStep(${stepNumber}): compressed ${replaced} big strings (store size: ${bigStringStore.size})`);
+        }
+        const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
+        const lastInputTokens = lastStep?.usage?.inputTokens;
+        if (lastInputTokens && lastInputTokens > MAX_INPUT_TOKENS) {
+          console.log(`[Agent] prepareStep(${stepNumber}): last step used ${lastInputTokens} input tokens, exceeds ${MAX_INPUT_TOKENS}, trimming...`);
+          const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
+          const trimmedMsgs = newMessages.slice(newMessages.length - keep);
+          if (historySummary) {
+            trimmedMsgs.unshift({
+              role: "user",
+              content: `[Context Summary - the following is a summary of earlier conversation that was trimmed to save context space]:
+${historySummary}`
+            });
+          }
+          newMessages = trimmedMsgs;
+          console.log(`[Agent] prepareStep(${stepNumber}): trimmed to ${newMessages.length} messages`);
+        } else {
+          const estimatedTokens = estimateTokens(newMessages);
+          if (estimatedTokens > MAX_INPUT_TOKENS) {
+            console.log(`[Agent] prepareStep(${stepNumber}): estimated ${estimatedTokens} tokens, exceeds ${MAX_INPUT_TOKENS}, trimming...`);
+            const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
+            const trimmedMsgs = newMessages.slice(newMessages.length - keep);
+            if (historySummary) {
+              trimmedMsgs.unshift({
+                role: "user",
+                content: `[Context Summary - the following is a summary of earlier conversation that was trimmed to save context space]:
+${historySummary}`
+              });
+            }
+            newMessages = trimmedMsgs;
+            console.log(`[Agent] prepareStep(${stepNumber}): trimmed to ${newMessages.length} messages`);
+          }
         }
         const lastMsg = newMessages[newMessages.length - 1];
         if (!lastMsg || lastMsg.role !== "tool") {
@@ -39497,6 +39651,7 @@ function clearHistory() {
   conversationHistory = [];
   compressedUpToIndex = 0;
   bigStringStore.clear();
+  historySummary = null;
   console.log("[Agent] Conversation history cleared.");
 }
 __name(clearHistory, "clearHistory");
