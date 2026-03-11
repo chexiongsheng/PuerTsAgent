@@ -116,7 +116,6 @@ You are running in a PuerTS environment. Below are the rules for interacting bet
    \`\`\`
 
 ### Important Notes
-- If a delegate has value-type parameters, you need to add \`UsingAction\` or \`UsingFunc\` declarations (see PuerTS FAQ).
 - The \`CS\` global object is always available in the PuerTS JS environment for accessing any C# type.
 - The \`puer\` global object provides PuerTS helper APIs: \`$ref\`, \`$unref\`, \`$generic\`, \`$typeof\`, \`$promise\`.
 `,
