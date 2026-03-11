@@ -104,6 +104,16 @@ const BIG_STRING_THRESHOLD = 500;
 // ============================================================
 
 /**
+ * =========================================================
+ *  SLIDING WINDOW TOGGLE
+ *  Set to `false` to completely disable the sliding-window
+ *  context management (automatic message trimming &
+ *  history summarization). Useful for debugging.
+ * =========================================================
+ */
+const ENABLE_SLIDING_WINDOW = true;
+
+/**
  * Approximate ratio of characters to tokens for English/code mixed content.
  * Used as a fallback when precise token counts are unavailable.
  */
@@ -643,7 +653,7 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
     compressHistoryMessages();
 
     // ---- Sliding window: trim conversationHistory if too long (cross-round) ----
-    {
+    if (ENABLE_SLIDING_WINDOW) {
         const estimated = estimateTokens(conversationHistory);
         if (estimated > MAX_INPUT_TOKENS) {
             const { messages: trimmed, trimmed: didTrim } = await trimMessagesByTokenBudget(
@@ -720,6 +730,9 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
                 }
 
                 // ---- (1.5) Sliding window: check actual token usage from last step ----
+                if (!ENABLE_SLIDING_WINDOW) {
+                    // Sliding window disabled -- skip token checks and trimming.
+                } else {
                 // Use the real inputTokens from the previous step if available.
                 const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
                 const lastInputTokens = lastStep?.usage?.inputTokens;
@@ -757,6 +770,7 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
                         console.log(`[Agent] prepareStep(${stepNumber}): trimmed to ${newMessages.length} messages`);
                     }
                 }
+                } // end ENABLE_SLIDING_WINDOW
 
                 // ---- (2) Extract screenshot images from the last tool message ----
                 // The Chat Completions API converter JSON.stringifies content-type
