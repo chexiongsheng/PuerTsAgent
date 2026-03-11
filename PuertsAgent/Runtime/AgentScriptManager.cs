@@ -28,7 +28,7 @@ namespace LLMAgent
         private Func<int> onGetHistoryLength;
         private Func<bool> onIsConfigured;
 
-        private const string EntryModule = "main.mjs";
+        private const string EntryModule = "LLMAgent/main.mjs";
 
 #if !UNITY_EDITOR
         /// <summary>
