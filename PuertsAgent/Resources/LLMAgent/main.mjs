@@ -39221,71 +39221,52 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
       ...createTypeReflectionTools(),
       ...createEvalTools()
     };
-    const MAX_STEPS = 25;
-    for (let step = 0; step < MAX_STEPS; step++) {
-      const result2 = await generateText({
-        model,
-        system: currentConfig.systemPrompt,
-        messages: conversationHistory,
-        tools,
-        stopWhen: stepCountIs(1)
-        // single step — we manage the loop
-      });
-      const toolCalls = result2.toolCalls;
-      const toolResults = result2.toolResults;
-      if (toolCalls && toolCalls.length > 0 && toolResults && toolResults.length > 0) {
-        conversationHistory.push({
-          role: "assistant",
-          content: toolCalls.map((tc) => ({
-            type: "tool-call",
-            toolCallId: tc.toolCallId,
-            toolName: tc.toolName,
-            input: tc.input
-          }))
-        });
-        const toolResultParts = [];
+    const result2 = await generateText({
+      model,
+      system: currentConfig.systemPrompt,
+      messages: conversationHistory,
+      tools,
+      stopWhen: stepCountIs(25),
+      prepareStep({ messages, stepNumber }) {
+        if (stepNumber === 0) return void 0;
+        const lastMsg = messages[messages.length - 1];
+        if (!lastMsg || lastMsg.role !== "tool") return void 0;
         const imageParts = [];
-        for (const tr2 of toolResults) {
-          const execResult = tr2.output;
-          if (tr2.toolName === "captureScreenshot" && execResult?.success && execResult?.base64) {
-            imageParts.push({
-              type: "image",
-              image: execResult.base64,
-              mediaType: "image/png"
-            });
-            toolResultParts.push({
-              type: "tool-result",
-              toolCallId: tr2.toolCallId,
-              toolName: tr2.toolName,
-              output: {
-                type: "json",
-                value: {
-                  success: true,
-                  message: execResult.message || `Screenshot captured (${execResult.width}x${execResult.height}).`,
-                  width: execResult.width,
-                  height: execResult.height
-                }
+        const patchedContent = [];
+        for (const part of lastMsg.content) {
+          if (part.type === "tool-result" && part.output?.type === "content" && Array.isArray(part.output.value)) {
+            const textItems = [];
+            for (const item of part.output.value) {
+              if (item.type === "file-data" && item.mediaType?.startsWith("image/")) {
+                imageParts.push({
+                  type: "image",
+                  image: item.data,
+                  mediaType: item.mediaType
+                });
+              } else {
+                textItems.push(item);
               }
-            });
+            }
+            if (imageParts.length > 0) {
+              patchedContent.push({
+                ...part,
+                output: textItems.length > 0 ? { type: "content", value: textItems } : { type: "text", value: textItems.map((t2) => t2.text || "").join("\n") || "Screenshot captured." }
+              });
+            } else {
+              patchedContent.push(part);
+            }
           } else {
-            toolResultParts.push({
-              type: "tool-result",
-              toolCallId: tr2.toolCallId,
-              toolName: tr2.toolName,
-              output: {
-                type: "json",
-                value: execResult
-              }
-            });
+            patchedContent.push(part);
           }
         }
-        conversationHistory.push({
-          role: "tool",
-          content: toolResultParts
-        });
         if (imageParts.length > 0) {
-          console.log(`[Agent] Injecting ${imageParts.length} screenshot image(s) as user message`);
-          conversationHistory.push({
+          console.log(`[Agent] prepareStep: injecting ${imageParts.length} screenshot image(s) as user message`);
+          const newMessages = [...messages];
+          newMessages[newMessages.length - 1] = {
+            role: "tool",
+            content: patchedContent
+          };
+          newMessages.push({
             role: "user",
             content: [
               ...imageParts,
@@ -39295,17 +39276,15 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
               }
             ]
           });
+          return { messages: newMessages };
         }
-        continue;
+        return void 0;
       }
-      const assistantMessage = result2.text;
-      conversationHistory.push({
-        role: "assistant",
-        content: assistantMessage
-      });
-      return assistantMessage;
+    });
+    for (const msg of result2.response.messages) {
+      conversationHistory.push(msg);
     }
-    return "[Agent] Reached maximum tool call steps. Please try again with a simpler request.";
+    return result2.text;
   } catch (error48) {
     const errorMsg = `[Agent] Error: ${error48.message || String(error48)}`;
     console.error(errorMsg);

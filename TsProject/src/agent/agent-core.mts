@@ -146,11 +146,10 @@ export function configure(config: Partial<AgentConfig>): string {
  * Send a message to the LLM and get a response.
  * This is the main async function called from C#.
  *
- * We implement a manual tool-call loop instead of relying on maxSteps,
- * because the OpenAI provider's convertToOpenAIChatMessages does NOT
- * support images inside tool-result messages. By handling the loop
- * ourselves, we can inject screenshot images as user-message image parts
- * (which the provider correctly converts to image_url).
+ * Uses maxSteps for automatic tool-call looping. A prepareStep hook
+ * intercepts screenshot images from tool results and re-injects them
+ * as user-message image parts, because the Chat Completions API
+ * converter only JSON.stringifies tool-result content (no image_url).
  */
 export async function sendMessage(userMessage: string, imageBase64?: string, imageMimeType?: string): Promise<string> {
     if (!isConfigured || !currentConfig.apiKey) {
@@ -160,11 +159,6 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
     // Add user message to history (with optional image)
     if (imageBase64 && imageMimeType) {
         console.log(`[Agent] Message includes attached image (${imageMimeType}, ${imageBase64.length} base64 chars)`);
-        // Pass raw base64 string + mediaType so the AI SDK treats it as inline
-        // data content.  The OpenAI provider will emit:
-        // { type: "image_url", image_url: { url: "data:image/png;base64,..." } }
-        // NOTE: Do NOT wrap in `new URL("data:...")` – the SDK's downloadAssets
-        // would try to fetch it and validateDownloadUrl rejects data: URLs.
         conversationHistory.push({
             role: 'user',
             content: [
@@ -206,117 +200,93 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
             ...createEvalTools(),
         };
 
-        const MAX_STEPS = 25;
+        const result = await generateText({
+            model,
+            system: currentConfig.systemPrompt,
+            messages: conversationHistory,
+            tools,
+            stopWhen: stepCountIs(25),
+            prepareStep({ messages, stepNumber }) {
+                if (stepNumber === 0) return undefined;
 
-        for (let step = 0; step < MAX_STEPS; step++) {
-            const result = await generateText({
-                model,
-                system: currentConfig.systemPrompt,
-                messages: conversationHistory,
-                tools,
-                stopWhen: stepCountIs(1),  // single step — we manage the loop
-            });
+                // Scan the last tool message for screenshot images.
+                // The Chat Completions API converter JSON.stringifies content-type
+                // tool outputs (including file-data images), so the model cannot
+                // "see" them. We extract such images and append a user message
+                // with proper image parts that the converter handles correctly.
+                const lastMsg = messages[messages.length - 1];
+                if (!lastMsg || lastMsg.role !== 'tool') return undefined;
 
-            const toolCalls = result.toolCalls;
-            const toolResults = result.toolResults;
+                const imageParts: Array<any> = [];
+                const patchedContent: any[] = [];
 
-            // If the model produced tool calls, process them and continue the loop
-            if (toolCalls && toolCalls.length > 0 && toolResults && toolResults.length > 0) {
-                // 1. Push the assistant message with tool calls
-                conversationHistory.push({
-                    role: 'assistant',
-                    content: toolCalls.map(tc => ({
-                        type: 'tool-call' as const,
-                        toolCallId: tc.toolCallId,
-                        toolName: tc.toolName,
-                        input: tc.input,
-                    })),
-                });
+                for (const part of lastMsg.content as any[]) {
+                    if (
+                        part.type === 'tool-result' &&
+                        part.output?.type === 'content' &&
+                        Array.isArray(part.output.value)
+                    ) {
+                        const textItems: any[] = [];
+                        for (const item of part.output.value) {
+                            if (item.type === 'file-data' && item.mediaType?.startsWith('image/')) {
+                                imageParts.push({
+                                    type: 'image' as const,
+                                    image: item.data,
+                                    mediaType: item.mediaType,
+                                });
+                            } else {
+                                textItems.push(item);
+                            }
+                        }
 
-                // 2. Build tool-result messages, and collect any images to inject
-                const toolResultParts: ModelMessage['content'] extends infer T ? T extends any[] ? T : never : never = [];
-                const imageParts: Array<{ type: 'image'; image: string; mediaType: string }> = [];
-
-                for (const tr of toolResults) {
-                    const execResult = tr.output as any;
-
-                    // For screenshot tool: extract the base64 image data
-                    if (tr.toolName === 'captureScreenshot' && execResult?.success && execResult?.base64) {
-                        // Store image to inject as a user message later.
-                        // Pass raw base64 string so the SDK does not attempt to
-                        // download a data: URL (which would fail validation).
-                        imageParts.push({
-                            type: 'image' as const,
-                            image: execResult.base64,
-                            mediaType: 'image/png',
-                        } as any);
-
-                        // Push a text-only tool result (no base64 blob to waste tokens)
-                        toolResultParts.push({
-                            type: 'tool-result' as const,
-                            toolCallId: tr.toolCallId,
-                            toolName: tr.toolName,
-                            output: {
-                                type: 'json' as const,
-                                value: {
-                                    success: true,
-                                    message: execResult.message || `Screenshot captured (${execResult.width}x${execResult.height}).`,
-                                    width: execResult.width,
-                                    height: execResult.height,
-                                },
-                            },
-                        } as any);
+                        if (imageParts.length > 0) {
+                            // Replace content output with text-only version
+                            patchedContent.push({
+                                ...part,
+                                output: textItems.length > 0
+                                    ? { type: 'content' as const, value: textItems }
+                                    : { type: 'text' as const, value: textItems.map((t: any) => t.text || '').join('\n') || 'Screenshot captured.' },
+                            });
+                        } else {
+                            patchedContent.push(part);
+                        }
                     } else {
-                        toolResultParts.push({
-                            type: 'tool-result' as const,
-                            toolCallId: tr.toolCallId,
-                            toolName: tr.toolName,
-                            output: {
-                                type: 'json' as const,
-                                value: execResult,
-                            },
-                        } as any);
+                        patchedContent.push(part);
                     }
                 }
 
-                // 3. Push tool results
-                conversationHistory.push({
-                    role: 'tool',
-                    content: toolResultParts as any,
-                });
-
-                // 4. If there were screenshot images, inject them as a user message
-                //    so the OpenAI provider sends them as proper image_url parts.
                 if (imageParts.length > 0) {
-                    console.log(`[Agent] Injecting ${imageParts.length} screenshot image(s) as user message`);
-                    conversationHistory.push({
+                    console.log(`[Agent] prepareStep: injecting ${imageParts.length} screenshot image(s) as user message`);
+                    const newMessages = [...messages];
+                    // Replace the tool message with patched (image-stripped) version
+                    newMessages[newMessages.length - 1] = {
+                        role: 'tool',
+                        content: patchedContent,
+                    } as any;
+                    // Append user message with the extracted images
+                    newMessages.push({
                         role: 'user',
                         content: [
-                            ...imageParts as any,
+                            ...imageParts,
                             {
                                 type: 'text' as const,
                                 text: 'Above is the screenshot I just captured. Please analyze it and respond to my earlier request.',
                             },
                         ],
-                    });
+                    } as any);
+                    return { messages: newMessages };
                 }
 
-                // Continue loop — model will see the tool results + images
-                continue;
-            }
+                return undefined;
+            },
+        });
 
-            // No tool calls — model produced a final text response
-            const assistantMessage = result.text;
-            conversationHistory.push({
-                role: 'assistant',
-                content: assistantMessage,
-            });
-
-            return assistantMessage;
+        // Append all response messages (assistant + tool) to conversation history
+        for (const msg of result.response.messages) {
+            conversationHistory.push(msg as ModelMessage);
         }
 
-        // If we exhausted all steps, return whatever we got last
-        return '[Agent] Reached maximum tool call steps. Please try again with a simpler request.';
+        return result.text;
     } catch (error: any) {
         const errorMsg = `[Agent] Error: ${error.message || String(error)}`;
         console.error(errorMsg);
