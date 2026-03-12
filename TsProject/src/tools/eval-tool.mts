@@ -7,6 +7,8 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 
+var jsEnv: CS.Puerts.ScriptEnv = null as never;
+
 /**
  * Create eval tools that the agent can use to execute JS code at runtime.
  */
@@ -17,59 +19,81 @@ export function createEvalTools() {
          */
         evalJsCode: tool({
             description:
-                'Execute JavaScript code in the PuerTS runtime environment. ' +
-                'The code runs inside Unity via PuerTS, so it has full access to:\n' +
-                '- The `CS` global object for calling any C# / Unity API (e.g. CS.UnityEngine.GameObject, CS.UnityEngine.Debug.Log)\n' +
-                '- The `puer` global object for PuerTS helpers ($ref, $unref, $generic, $typeof, $promise)\n' +
-                '- Standard JS/TS features\n\n' +
-                'Use this tool when you need to:\n' +
-                '- Inspect or modify Unity scene objects at runtime\n' +
-                '- Create/destroy GameObjects or Components\n' +
-                '- Query transform hierarchies, component states, etc.\n' +
-                '- Execute any Unity API call dynamically\n' +
-                '- Test code snippets in the live Unity environment\n\n' +
-                'The code is evaluated via eval(). The return value of the last expression will be captured as the result. ' +
-                'Use console.log() for debug output (it goes to Unity console). ' +
-                'Wrap async operations with await if needed (the eval is wrapped in an async context).\n\n' +
-                'IMPORTANT: Follow PuerTS interop rules. For example:\n' +
-                '- Use CS.UnityEngine.Vector3.op_Addition(a, b) instead of a + b for operator overloading\n' +
-                '- Use puer.$typeof(CS.SomeType) instead of typeof for C# types\n' +
-                '- Use puer.$generic() for generic types\n' +
-                '- Use puer.$ref() / puer.$unref() for out/ref parameters',
+                'Execute JavaScript code in a dedicated PuerTS runtime environment. ' +
+                'This VM is separate from the main agent VM but is **reused across calls** — ' +
+                'variables, functions, and state defined in previous calls persist and can be referenced in later calls.\n\n' +
+                'The code runs inside Unity via PuerTS with full access to the `CS` and `puer` globals ' +
+                '(see PuerTS interop rules in the system prompt).\n\n' +
+                'Use this tool when you need to inspect or modify Unity scene objects, ' +
+                'create/destroy GameObjects or Components, query hierarchies, ' +
+                'execute Unity API calls dynamically, or test code snippets in the live environment.\n\n' +
+                'The code is wrapped in an async context, so you can use `await`. ' +
+                'Use `return <value>` to pass a result back — the returned value will appear in the `result` field of the response. ' +
+                'If no `return` statement is used, `result` will be "(no return value)". ' +
+                'Objects are serialized via JSON.stringify; primitives are converted to strings.\n\n' +
+                'On success the response is `{ success: true, result: string }`. ' +
+                'On failure the response is `{ success: false, error: string, stack: string }`.\n\n' +
+                'Use console.log() for debug output (it goes to the Unity console).',
             inputSchema: z.object({
                 code: z
                     .string()
                     .describe(
                         'The JavaScript code to execute. Can include multiple statements. ' +
-                        'The result of the last expression is returned. ' +
-                        'Example: "const go = CS.UnityEngine.GameObject.Find(\'Main Camera\'); go.transform.position.toString()"'
+                        'Use `return <expr>` to send a value back as the result. ' +
+                        'Example: "const go = CS.UnityEngine.GameObject.Find(\'Main Camera\'); return go.transform.position.toString()"'
                     ),
             }),
             execute: async ({ code }) => {
                 try {
-                    // Wrap in an async IIFE so that `await` works inside the eval'd code
-                    const wrappedCode = `(async () => { ${code} })()`;
-                    const result = await eval(wrappedCode);
+                    if (!jsEnv) {
+                        jsEnv = CS.LLMAgent.ScriptEnvBridge.CreateJavaScriptEnv();
+                    }
 
-                    // Convert result to a displayable string
-                    let resultStr: string;
-                    if (result === undefined) {
-                        resultStr = '(no return value)';
-                    } else if (result === null) {
-                        resultStr = 'null';
-                    } else if (typeof result === 'object') {
-                        try {
-                            resultStr = JSON.stringify(result, null, 2);
-                        } catch {
-                            resultStr = String(result);
-                        }
-                    } else {
-                        resultStr = String(result);
+                    // Wrap user code into a script that ScriptEnvBridge.Eval expects:
+                    // The script must evaluate to a function that accepts an onFinish callback.
+                    // We use an async IIFE inside so that `await` works, then serialize the result
+                    // and pass it back via onFinish(resultString).
+                    const wrappedCode = `(function(onFinish) {
+    (async () => {
+        try {
+            ${code}
+        } catch(e) {
+            onFinish.Invoke(JSON.stringify({ __error: true, message: String(e.message || e), stack: String(e.stack || '') }));
+        }
+    })().then(function(result) {
+        var resultStr;
+        if (result === undefined) {
+            resultStr = '(no return value)';
+        } else if (result === null) {
+            resultStr = 'null';
+        } else if (typeof result === 'object') {
+            try { resultStr = JSON.stringify(result, null, 2); } catch(e) { resultStr = String(result); }
+        } else {
+            resultStr = String(result);
+        }
+        onFinish.Invoke(JSON.stringify({ __error: false, result: resultStr }));
+    }).catch(function(err) {
+        onFinish.Invoke(JSON.stringify({ __error: true, message: String(err.message || err), stack: String(err.stack || '') }));
+    });
+})`;
+
+                    // Execute in the isolated ScriptEnv VM via C# bridge
+                    const resultJson = await new Promise<string>((resolve) => {
+                        CS.LLMAgent.ScriptEnvBridge.Eval(jsEnv, wrappedCode, resolve);
+                    });
+
+                    const parsed = JSON.parse(resultJson);
+                    if (parsed.__error) {
+                        return {
+                            success: false,
+                            error: parsed.message,
+                            stack: parsed.stack || '',
+                        };
                     }
 
                     return {
                         success: true,
-                        result: resultStr,
+                        result: parsed.result,
                     };
                 } catch (error: any) {
                     const errorMsg = error.message || String(error);

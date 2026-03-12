@@ -73,6 +73,13 @@
         interface ISpanFormattable
         {
         }
+        class Single extends System.ValueType implements System.IFormattable, System.ISpanFormattable, System.IComparable, System.IComparable$1<number>, System.IConvertible, System.IEquatable$1<number>
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        interface IDisposable
+        {
+        }
         class Boolean extends System.ValueType implements System.IComparable, System.IComparable$1<boolean>, System.IConvertible, System.IEquatable$1<boolean>
         {
             protected [__keep_incompatibility]: never;
@@ -348,6 +355,13 @@
             public static GetTypeDetails ($typeNamesComma: string) : string
             public static InvalidateCache () : void
         }
+        class ScriptEnvBridge extends System.Object
+        {
+            protected [__keep_incompatibility]: never;
+            public static CreateJavaScriptEnv () : Puerts.ScriptEnv
+            public static Eval ($env: Puerts.ScriptEnv, $script: string, $onFinish: System.Action$1<string>) : void
+            public constructor ()
+        }
     }
     namespace System.Collections.Generic {
         interface IEnumerable$1<T> extends System.Collections.IEnumerable
@@ -389,6 +403,12 @@
         }
         interface IDeserializationCallback
         {
+        }
+    }
+    namespace Puerts {
+        class ScriptEnv extends System.Object implements System.IDisposable
+        {
+            protected [__keep_incompatibility]: never;
         }
     }
     namespace System.Reflection {

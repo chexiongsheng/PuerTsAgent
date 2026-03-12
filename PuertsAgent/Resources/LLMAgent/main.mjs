@@ -7062,7 +7062,7 @@ function formatError(error48, mapper = (issue2) => issue2.message) {
 }
 __name(formatError, "formatError");
 function treeifyError(error48, mapper = (issue2) => issue2.message) {
-  const result2 = { errors: [] };
+  const result = { errors: [] };
   const processError = /* @__PURE__ */ __name((error49, path = []) => {
     var _a21, _b17;
     for (const issue2 of error49.issues) {
@@ -7075,10 +7075,10 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
       } else {
         const fullpath = [...path, ...issue2.path];
         if (fullpath.length === 0) {
-          result2.errors.push(mapper(issue2));
+          result.errors.push(mapper(issue2));
           continue;
         }
-        let curr = result2;
+        let curr = result;
         let i2 = 0;
         while (i2 < fullpath.length) {
           const el = fullpath[i2];
@@ -7101,7 +7101,7 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
     }
   }, "processError");
   processError(error48);
-  return result2;
+  return result;
 }
 __name(treeifyError, "treeifyError");
 function toDotPath(_path) {
@@ -7138,52 +7138,52 @@ __name(prettifyError, "prettifyError");
 // node_modules/zod/v4/core/parse.js
 var _parse = /* @__PURE__ */ __name((_Err) => (schema, value, _ctx, _params) => {
   const ctx = _ctx ? Object.assign(_ctx, { async: false }) : { async: false };
-  const result2 = schema._zod.run({ value, issues: [] }, ctx);
-  if (result2 instanceof Promise) {
+  const result = schema._zod.run({ value, issues: [] }, ctx);
+  if (result instanceof Promise) {
     throw new $ZodAsyncError();
   }
-  if (result2.issues.length) {
-    const e2 = new (_params?.Err ?? _Err)(result2.issues.map((iss) => finalizeIssue(iss, ctx, config())));
+  if (result.issues.length) {
+    const e2 = new (_params?.Err ?? _Err)(result.issues.map((iss) => finalizeIssue(iss, ctx, config())));
     captureStackTrace(e2, _params?.callee);
     throw e2;
   }
-  return result2.value;
+  return result.value;
 }, "_parse");
 var parse = /* @__PURE__ */ _parse($ZodRealError);
 var _parseAsync = /* @__PURE__ */ __name((_Err) => async (schema, value, _ctx, params) => {
   const ctx = _ctx ? Object.assign(_ctx, { async: true }) : { async: true };
-  let result2 = schema._zod.run({ value, issues: [] }, ctx);
-  if (result2 instanceof Promise)
-    result2 = await result2;
-  if (result2.issues.length) {
-    const e2 = new (params?.Err ?? _Err)(result2.issues.map((iss) => finalizeIssue(iss, ctx, config())));
+  let result = schema._zod.run({ value, issues: [] }, ctx);
+  if (result instanceof Promise)
+    result = await result;
+  if (result.issues.length) {
+    const e2 = new (params?.Err ?? _Err)(result.issues.map((iss) => finalizeIssue(iss, ctx, config())));
     captureStackTrace(e2, params?.callee);
     throw e2;
   }
-  return result2.value;
+  return result.value;
 }, "_parseAsync");
 var parseAsync = /* @__PURE__ */ _parseAsync($ZodRealError);
 var _safeParse = /* @__PURE__ */ __name((_Err) => (schema, value, _ctx) => {
   const ctx = _ctx ? { ..._ctx, async: false } : { async: false };
-  const result2 = schema._zod.run({ value, issues: [] }, ctx);
-  if (result2 instanceof Promise) {
+  const result = schema._zod.run({ value, issues: [] }, ctx);
+  if (result instanceof Promise) {
     throw new $ZodAsyncError();
   }
-  return result2.issues.length ? {
+  return result.issues.length ? {
     success: false,
-    error: new (_Err ?? $ZodError)(result2.issues.map((iss) => finalizeIssue(iss, ctx, config())))
-  } : { success: true, data: result2.value };
+    error: new (_Err ?? $ZodError)(result.issues.map((iss) => finalizeIssue(iss, ctx, config())))
+  } : { success: true, data: result.value };
 }, "_safeParse");
 var safeParse = /* @__PURE__ */ _safeParse($ZodRealError);
 var _safeParseAsync = /* @__PURE__ */ __name((_Err) => async (schema, value, _ctx) => {
   const ctx = _ctx ? Object.assign(_ctx, { async: true }) : { async: true };
-  let result2 = schema._zod.run({ value, issues: [] }, ctx);
-  if (result2 instanceof Promise)
-    result2 = await result2;
-  return result2.issues.length ? {
+  let result = schema._zod.run({ value, issues: [] }, ctx);
+  if (result instanceof Promise)
+    result = await result;
+  return result.issues.length ? {
     success: false,
-    error: new _Err(result2.issues.map((iss) => finalizeIssue(iss, ctx, config())))
-  } : { success: true, data: result2.value };
+    error: new _Err(result.issues.map((iss) => finalizeIssue(iss, ctx, config())))
+  } : { success: true, data: result.value };
 }, "_safeParseAsync");
 var safeParseAsync = /* @__PURE__ */ _safeParseAsync($ZodRealError);
 var _encode = /* @__PURE__ */ __name((_Err) => (schema, value, _ctx) => {
@@ -7890,23 +7890,23 @@ var $ZodCheckEndsWith = /* @__PURE__ */ $constructor("$ZodCheckEndsWith", (inst,
     });
   };
 });
-function handleCheckPropertyResult(result2, payload, property) {
-  if (result2.issues.length) {
-    payload.issues.push(...prefixIssues(property, result2.issues));
+function handleCheckPropertyResult(result, payload, property) {
+  if (result.issues.length) {
+    payload.issues.push(...prefixIssues(property, result.issues));
   }
 }
 __name(handleCheckPropertyResult, "handleCheckPropertyResult");
 var $ZodCheckProperty = /* @__PURE__ */ $constructor("$ZodCheckProperty", (inst, def) => {
   $ZodCheck.init(inst, def);
   inst._zod.check = (payload) => {
-    const result2 = def.schema._zod.run({
+    const result = def.schema._zod.run({
       value: payload.value[def.property],
       issues: []
     }, {});
-    if (result2 instanceof Promise) {
-      return result2.then((result3) => handleCheckPropertyResult(result3, payload, def.property));
+    if (result instanceof Promise) {
+      return result.then((result2) => handleCheckPropertyResult(result2, payload, def.property));
     }
-    handleCheckPropertyResult(result2, payload, def.property);
+    handleCheckPropertyResult(result, payload, def.property);
     return;
   };
 });
@@ -8069,13 +8069,13 @@ var $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
         }
         return handleCanaryResult(canary, payload, ctx);
       }
-      const result2 = inst._zod.parse(payload, ctx);
-      if (result2 instanceof Promise) {
+      const result = inst._zod.parse(payload, ctx);
+      if (result instanceof Promise) {
         if (ctx.async === false)
           throw new $ZodAsyncError();
-        return result2.then((result3) => runChecks(result3, checks, ctx));
+        return result.then((result2) => runChecks(result2, checks, ctx));
       }
-      return runChecks(result2, checks, ctx);
+      return runChecks(result, checks, ctx);
     };
   }
   defineLazy(inst, "~standard", () => ({
@@ -8587,11 +8587,11 @@ var $ZodDate = /* @__PURE__ */ $constructor("$ZodDate", (inst, def) => {
     return payload;
   };
 });
-function handleArrayResult(result2, final, index) {
-  if (result2.issues.length) {
-    final.issues.push(...prefixIssues(index, result2.issues));
+function handleArrayResult(result, final, index) {
+  if (result.issues.length) {
+    final.issues.push(...prefixIssues(index, result.issues));
   }
-  final.value[index] = result2.value;
+  final.value[index] = result.value;
 }
 __name(handleArrayResult, "handleArrayResult");
 var $ZodArray = /* @__PURE__ */ $constructor("$ZodArray", (inst, def) => {
@@ -8611,14 +8611,14 @@ var $ZodArray = /* @__PURE__ */ $constructor("$ZodArray", (inst, def) => {
     const proms = [];
     for (let i2 = 0; i2 < input.length; i2++) {
       const item = input[i2];
-      const result2 = def.element._zod.run({
+      const result = def.element._zod.run({
         value: item,
         issues: []
       }, ctx);
-      if (result2 instanceof Promise) {
-        proms.push(result2.then((result3) => handleArrayResult(result3, payload, i2)));
+      if (result instanceof Promise) {
+        proms.push(result.then((result2) => handleArrayResult(result2, payload, i2)));
       } else {
-        handleArrayResult(result2, payload, i2);
+        handleArrayResult(result, payload, i2);
       }
     }
     if (proms.length) {
@@ -8627,19 +8627,19 @@ var $ZodArray = /* @__PURE__ */ $constructor("$ZodArray", (inst, def) => {
     return payload;
   };
 });
-function handlePropertyResult(result2, final, key, input, isOptionalOut) {
-  if (result2.issues.length) {
+function handlePropertyResult(result, final, key, input, isOptionalOut) {
+  if (result.issues.length) {
     if (isOptionalOut && !(key in input)) {
       return;
     }
-    final.issues.push(...prefixIssues(key, result2.issues));
+    final.issues.push(...prefixIssues(key, result.issues));
   }
-  if (result2.value === void 0) {
+  if (result.value === void 0) {
     if (key in input) {
       final.value[key] = void 0;
     }
   } else {
-    final.value[key] = result2.value;
+    final.value[key] = result.value;
   }
 }
 __name(handlePropertyResult, "handlePropertyResult");
@@ -8858,9 +8858,9 @@ var $ZodObjectJIT = /* @__PURE__ */ $constructor("$ZodObjectJIT", (inst, def) =>
   };
 });
 function handleUnionResults(results, final, inst, ctx) {
-  for (const result2 of results) {
-    if (result2.issues.length === 0) {
-      final.value = result2.value;
+  for (const result of results) {
+    if (result.issues.length === 0) {
+      final.value = result.value;
       return final;
     }
   }
@@ -8873,7 +8873,7 @@ function handleUnionResults(results, final, inst, ctx) {
     code: "invalid_union",
     input: final.value,
     inst,
-    errors: results.map((result2) => result2.issues.map((iss) => finalizeIssue(iss, ctx, config())))
+    errors: results.map((result) => result.issues.map((iss) => finalizeIssue(iss, ctx, config())))
   });
   return final;
 }
@@ -8904,17 +8904,17 @@ var $ZodUnion = /* @__PURE__ */ $constructor("$ZodUnion", (inst, def) => {
     let async = false;
     const results = [];
     for (const option of def.options) {
-      const result2 = option._zod.run({
+      const result = option._zod.run({
         value: payload.value,
         issues: []
       }, ctx);
-      if (result2 instanceof Promise) {
-        results.push(result2);
+      if (result instanceof Promise) {
+        results.push(result);
         async = true;
       } else {
-        if (result2.issues.length === 0)
-          return result2;
-        results.push(result2);
+        if (result.issues.length === 0)
+          return result;
+        results.push(result);
       }
     }
     if (!async)
@@ -8935,7 +8935,7 @@ function handleExclusiveUnionResults(results, final, inst, ctx) {
       code: "invalid_union",
       input: final.value,
       inst,
-      errors: results.map((result2) => result2.issues.map((iss) => finalizeIssue(iss, ctx, config())))
+      errors: results.map((result) => result.issues.map((iss) => finalizeIssue(iss, ctx, config())))
     });
   } else {
     final.issues.push({
@@ -8961,15 +8961,15 @@ var $ZodXor = /* @__PURE__ */ $constructor("$ZodXor", (inst, def) => {
     let async = false;
     const results = [];
     for (const option of def.options) {
-      const result2 = option._zod.run({
+      const result = option._zod.run({
         value: payload.value,
         issues: []
       }, ctx);
-      if (result2 instanceof Promise) {
-        results.push(result2);
+      if (result instanceof Promise) {
+        results.push(result);
         async = true;
       } else {
-        results.push(result2);
+        results.push(result);
       }
     }
     if (!async)
@@ -9105,7 +9105,7 @@ function mergeValues(a2, b2) {
   return { valid: false, mergeErrorPath: [] };
 }
 __name(mergeValues, "mergeValues");
-function handleIntersectionResults(result2, left, right) {
+function handleIntersectionResults(result, left, right) {
   const unrecKeys = /* @__PURE__ */ new Map();
   let unrecIssue;
   for (const iss of left.issues) {
@@ -9117,7 +9117,7 @@ function handleIntersectionResults(result2, left, right) {
         unrecKeys.get(k2).l = true;
       }
     } else {
-      result2.issues.push(iss);
+      result.issues.push(iss);
     }
   }
   for (const iss of right.issues) {
@@ -9128,21 +9128,21 @@ function handleIntersectionResults(result2, left, right) {
         unrecKeys.get(k2).r = true;
       }
     } else {
-      result2.issues.push(iss);
+      result.issues.push(iss);
     }
   }
   const bothKeys = [...unrecKeys].filter(([, f2]) => f2.l && f2.r).map(([k2]) => k2);
   if (bothKeys.length && unrecIssue) {
-    result2.issues.push({ ...unrecIssue, keys: bothKeys });
+    result.issues.push({ ...unrecIssue, keys: bothKeys });
   }
-  if (aborted(result2))
-    return result2;
+  if (aborted(result))
+    return result;
   const merged = mergeValues(left.value, right.value);
   if (!merged.valid) {
     throw new Error(`Unmergable intersection. Error path: ${JSON.stringify(merged.mergeErrorPath)}`);
   }
-  result2.value = merged.data;
-  return result2;
+  result.value = merged.data;
+  return result;
 }
 __name(handleIntersectionResults, "handleIntersectionResults");
 var $ZodTuple = /* @__PURE__ */ $constructor("$ZodTuple", (inst, def) => {
@@ -9183,28 +9183,28 @@ var $ZodTuple = /* @__PURE__ */ $constructor("$ZodTuple", (inst, def) => {
         if (i2 >= optStart)
           continue;
       }
-      const result2 = item._zod.run({
+      const result = item._zod.run({
         value: input[i2],
         issues: []
       }, ctx);
-      if (result2 instanceof Promise) {
-        proms.push(result2.then((result3) => handleTupleResult(result3, payload, i2)));
+      if (result instanceof Promise) {
+        proms.push(result.then((result2) => handleTupleResult(result2, payload, i2)));
       } else {
-        handleTupleResult(result2, payload, i2);
+        handleTupleResult(result, payload, i2);
       }
     }
     if (def.rest) {
       const rest = input.slice(items.length);
       for (const el of rest) {
         i2++;
-        const result2 = def.rest._zod.run({
+        const result = def.rest._zod.run({
           value: el,
           issues: []
         }, ctx);
-        if (result2 instanceof Promise) {
-          proms.push(result2.then((result3) => handleTupleResult(result3, payload, i2)));
+        if (result instanceof Promise) {
+          proms.push(result.then((result2) => handleTupleResult(result2, payload, i2)));
         } else {
-          handleTupleResult(result2, payload, i2);
+          handleTupleResult(result, payload, i2);
         }
       }
     }
@@ -9213,11 +9213,11 @@ var $ZodTuple = /* @__PURE__ */ $constructor("$ZodTuple", (inst, def) => {
     return payload;
   };
 });
-function handleTupleResult(result2, final, index) {
-  if (result2.issues.length) {
-    final.issues.push(...prefixIssues(index, result2.issues));
+function handleTupleResult(result, final, index) {
+  if (result.issues.length) {
+    final.issues.push(...prefixIssues(index, result.issues));
   }
-  final.value[index] = result2.value;
+  final.value[index] = result.value;
 }
 __name(handleTupleResult, "handleTupleResult");
 var $ZodRecord = /* @__PURE__ */ $constructor("$ZodRecord", (inst, def) => {
@@ -9241,19 +9241,19 @@ var $ZodRecord = /* @__PURE__ */ $constructor("$ZodRecord", (inst, def) => {
       for (const key of values) {
         if (typeof key === "string" || typeof key === "number" || typeof key === "symbol") {
           recordKeys.add(typeof key === "number" ? key.toString() : key);
-          const result2 = def.valueType._zod.run({ value: input[key], issues: [] }, ctx);
-          if (result2 instanceof Promise) {
-            proms.push(result2.then((result3) => {
-              if (result3.issues.length) {
-                payload.issues.push(...prefixIssues(key, result3.issues));
+          const result = def.valueType._zod.run({ value: input[key], issues: [] }, ctx);
+          if (result instanceof Promise) {
+            proms.push(result.then((result2) => {
+              if (result2.issues.length) {
+                payload.issues.push(...prefixIssues(key, result2.issues));
               }
-              payload.value[key] = result3.value;
+              payload.value[key] = result2.value;
             }));
           } else {
-            if (result2.issues.length) {
-              payload.issues.push(...prefixIssues(key, result2.issues));
+            if (result.issues.length) {
+              payload.issues.push(...prefixIssues(key, result.issues));
             }
-            payload.value[key] = result2.value;
+            payload.value[key] = result.value;
           }
         }
       }
@@ -9306,19 +9306,19 @@ var $ZodRecord = /* @__PURE__ */ $constructor("$ZodRecord", (inst, def) => {
           }
           continue;
         }
-        const result2 = def.valueType._zod.run({ value: input[key], issues: [] }, ctx);
-        if (result2 instanceof Promise) {
-          proms.push(result2.then((result3) => {
-            if (result3.issues.length) {
-              payload.issues.push(...prefixIssues(key, result3.issues));
+        const result = def.valueType._zod.run({ value: input[key], issues: [] }, ctx);
+        if (result instanceof Promise) {
+          proms.push(result.then((result2) => {
+            if (result2.issues.length) {
+              payload.issues.push(...prefixIssues(key, result2.issues));
             }
-            payload.value[keyResult.value] = result3.value;
+            payload.value[keyResult.value] = result2.value;
           }));
         } else {
-          if (result2.issues.length) {
-            payload.issues.push(...prefixIssues(key, result2.issues));
+          if (result.issues.length) {
+            payload.issues.push(...prefixIssues(key, result.issues));
           }
-          payload.value[keyResult.value] = result2.value;
+          payload.value[keyResult.value] = result.value;
         }
       }
     }
@@ -9406,22 +9406,22 @@ var $ZodSet = /* @__PURE__ */ $constructor("$ZodSet", (inst, def) => {
     const proms = [];
     payload.value = /* @__PURE__ */ new Set();
     for (const item of input) {
-      const result2 = def.valueType._zod.run({ value: item, issues: [] }, ctx);
-      if (result2 instanceof Promise) {
-        proms.push(result2.then((result3) => handleSetResult(result3, payload)));
+      const result = def.valueType._zod.run({ value: item, issues: [] }, ctx);
+      if (result instanceof Promise) {
+        proms.push(result.then((result2) => handleSetResult(result2, payload)));
       } else
-        handleSetResult(result2, payload);
+        handleSetResult(result, payload);
     }
     if (proms.length)
       return Promise.all(proms).then(() => payload);
     return payload;
   };
 });
-function handleSetResult(result2, final) {
-  if (result2.issues.length) {
-    final.issues.push(...result2.issues);
+function handleSetResult(result, final) {
+  if (result.issues.length) {
+    final.issues.push(...result.issues);
   }
-  final.value.add(result2.value);
+  final.value.add(result.value);
 }
 __name(handleSetResult, "handleSetResult");
 var $ZodEnum = /* @__PURE__ */ $constructor("$ZodEnum", (inst, def) => {
@@ -9502,11 +9502,11 @@ var $ZodTransform = /* @__PURE__ */ $constructor("$ZodTransform", (inst, def) =>
     return payload;
   };
 });
-function handleOptionalResult(result2, input) {
-  if (result2.issues.length && input === void 0) {
+function handleOptionalResult(result, input) {
+  if (result.issues.length && input === void 0) {
     return { issues: [], value: void 0 };
   }
-  return result2;
+  return result;
 }
 __name(handleOptionalResult, "handleOptionalResult");
 var $ZodOptional = /* @__PURE__ */ $constructor("$ZodOptional", (inst, def) => {
@@ -9522,10 +9522,10 @@ var $ZodOptional = /* @__PURE__ */ $constructor("$ZodOptional", (inst, def) => {
   });
   inst._zod.parse = (payload, ctx) => {
     if (def.innerType._zod.optin === "optional") {
-      const result2 = def.innerType._zod.run(payload, ctx);
-      if (result2 instanceof Promise)
-        return result2.then((r2) => handleOptionalResult(r2, payload.value));
-      return handleOptionalResult(result2, payload.value);
+      const result = def.innerType._zod.run(payload, ctx);
+      if (result instanceof Promise)
+        return result.then((r2) => handleOptionalResult(r2, payload.value));
+      return handleOptionalResult(result, payload.value);
     }
     if (payload.value === void 0) {
       return payload;
@@ -9570,11 +9570,11 @@ var $ZodDefault = /* @__PURE__ */ $constructor("$ZodDefault", (inst, def) => {
       payload.value = def.defaultValue;
       return payload;
     }
-    const result2 = def.innerType._zod.run(payload, ctx);
-    if (result2 instanceof Promise) {
-      return result2.then((result3) => handleDefaultResult(result3, def));
+    const result = def.innerType._zod.run(payload, ctx);
+    if (result instanceof Promise) {
+      return result.then((result2) => handleDefaultResult(result2, def));
     }
-    return handleDefaultResult(result2, def);
+    return handleDefaultResult(result, def);
   };
 });
 function handleDefaultResult(payload, def) {
@@ -9605,11 +9605,11 @@ var $ZodNonOptional = /* @__PURE__ */ $constructor("$ZodNonOptional", (inst, def
     return v2 ? new Set([...v2].filter((x2) => x2 !== void 0)) : void 0;
   });
   inst._zod.parse = (payload, ctx) => {
-    const result2 = def.innerType._zod.run(payload, ctx);
-    if (result2 instanceof Promise) {
-      return result2.then((result3) => handleNonOptionalResult(result3, inst));
+    const result = def.innerType._zod.run(payload, ctx);
+    if (result instanceof Promise) {
+      return result.then((result2) => handleNonOptionalResult(result2, inst));
     }
-    return handleNonOptionalResult(result2, inst);
+    return handleNonOptionalResult(result, inst);
   };
 });
 function handleNonOptionalResult(payload, inst) {
@@ -9630,14 +9630,14 @@ var $ZodSuccess = /* @__PURE__ */ $constructor("$ZodSuccess", (inst, def) => {
     if (ctx.direction === "backward") {
       throw new $ZodEncodeError("ZodSuccess");
     }
-    const result2 = def.innerType._zod.run(payload, ctx);
-    if (result2 instanceof Promise) {
-      return result2.then((result3) => {
-        payload.value = result3.issues.length === 0;
+    const result = def.innerType._zod.run(payload, ctx);
+    if (result instanceof Promise) {
+      return result.then((result2) => {
+        payload.value = result2.issues.length === 0;
         return payload;
       });
     }
-    payload.value = result2.issues.length === 0;
+    payload.value = result.issues.length === 0;
     return payload;
   };
 });
@@ -9650,15 +9650,15 @@ var $ZodCatch = /* @__PURE__ */ $constructor("$ZodCatch", (inst, def) => {
     if (ctx.direction === "backward") {
       return def.innerType._zod.run(payload, ctx);
     }
-    const result2 = def.innerType._zod.run(payload, ctx);
-    if (result2 instanceof Promise) {
-      return result2.then((result3) => {
-        payload.value = result3.value;
-        if (result3.issues.length) {
+    const result = def.innerType._zod.run(payload, ctx);
+    if (result instanceof Promise) {
+      return result.then((result2) => {
+        payload.value = result2.value;
+        if (result2.issues.length) {
           payload.value = def.catchValue({
             ...payload,
             error: {
-              issues: result3.issues.map((iss) => finalizeIssue(iss, ctx, config()))
+              issues: result2.issues.map((iss) => finalizeIssue(iss, ctx, config()))
             },
             input: payload.value
           });
@@ -9667,12 +9667,12 @@ var $ZodCatch = /* @__PURE__ */ $constructor("$ZodCatch", (inst, def) => {
         return payload;
       });
     }
-    payload.value = result2.value;
-    if (result2.issues.length) {
+    payload.value = result.value;
+    if (result.issues.length) {
       payload.value = def.catchValue({
         ...payload,
         error: {
-          issues: result2.issues.map((iss) => finalizeIssue(iss, ctx, config()))
+          issues: result.issues.map((iss) => finalizeIssue(iss, ctx, config()))
         },
         input: payload.value
       });
@@ -9748,24 +9748,24 @@ var $ZodCodec = /* @__PURE__ */ $constructor("$ZodCodec", (inst, def) => {
     }
   };
 });
-function handleCodecAResult(result2, def, ctx) {
-  if (result2.issues.length) {
-    result2.aborted = true;
-    return result2;
+function handleCodecAResult(result, def, ctx) {
+  if (result.issues.length) {
+    result.aborted = true;
+    return result;
   }
   const direction = ctx.direction || "forward";
   if (direction === "forward") {
-    const transformed = def.transform(result2.value, result2);
+    const transformed = def.transform(result.value, result);
     if (transformed instanceof Promise) {
-      return transformed.then((value) => handleCodecTxResult(result2, value, def.out, ctx));
+      return transformed.then((value) => handleCodecTxResult(result, value, def.out, ctx));
     }
-    return handleCodecTxResult(result2, transformed, def.out, ctx);
+    return handleCodecTxResult(result, transformed, def.out, ctx);
   } else {
-    const transformed = def.reverseTransform(result2.value, result2);
+    const transformed = def.reverseTransform(result.value, result);
     if (transformed instanceof Promise) {
-      return transformed.then((value) => handleCodecTxResult(result2, value, def.in, ctx));
+      return transformed.then((value) => handleCodecTxResult(result, value, def.in, ctx));
     }
-    return handleCodecTxResult(result2, transformed, def.in, ctx);
+    return handleCodecTxResult(result, transformed, def.in, ctx);
   }
 }
 __name(handleCodecAResult, "handleCodecAResult");
@@ -9787,11 +9787,11 @@ var $ZodReadonly = /* @__PURE__ */ $constructor("$ZodReadonly", (inst, def) => {
     if (ctx.direction === "backward") {
       return def.innerType._zod.run(payload, ctx);
     }
-    const result2 = def.innerType._zod.run(payload, ctx);
-    if (result2 instanceof Promise) {
-      return result2.then(handleReadonlyResult);
+    const result = def.innerType._zod.run(payload, ctx);
+    if (result instanceof Promise) {
+      return result.then(handleReadonlyResult);
     }
-    return handleReadonlyResult(result2);
+    return handleReadonlyResult(result);
   };
 });
 function handleReadonlyResult(payload) {
@@ -9854,11 +9854,11 @@ var $ZodFunction = /* @__PURE__ */ $constructor("$ZodFunction", (inst, def) => {
     }
     return function(...args) {
       const parsedArgs = inst._def.input ? parse(inst._def.input, args) : args;
-      const result2 = Reflect.apply(func, this, parsedArgs);
+      const result = Reflect.apply(func, this, parsedArgs);
       if (inst._def.output) {
-        return parse(inst._def.output, result2);
+        return parse(inst._def.output, result);
       }
-      return result2;
+      return result;
     };
   };
   inst.implementAsync = (func) => {
@@ -9867,11 +9867,11 @@ var $ZodFunction = /* @__PURE__ */ $constructor("$ZodFunction", (inst, def) => {
     }
     return async function(...args) {
       const parsedArgs = inst._def.input ? await parseAsync(inst._def.input, args) : args;
-      const result2 = await Reflect.apply(func, this, parsedArgs);
+      const result = await Reflect.apply(func, this, parsedArgs);
       if (inst._def.output) {
-        return await parseAsync(inst._def.output, result2);
+        return await parseAsync(inst._def.output, result);
       }
-      return result2;
+      return result;
     };
   };
   inst._zod.parse = (payload, _ctx) => {
@@ -9955,8 +9955,8 @@ var $ZodCustom = /* @__PURE__ */ $constructor("$ZodCustom", (inst, def) => {
     return;
   };
 });
-function handleRefineResult(result2, payload, input, inst) {
-  if (!result2) {
+function handleRefineResult(result, payload, input, inst) {
+  if (!result) {
     const _iss = {
       code: "custom",
       input,
@@ -13129,12 +13129,12 @@ var error26 = /* @__PURE__ */ __name(() => {
     }
   };
   function getSizing(origin, unitType, inclusive, targetShouldBe) {
-    const result2 = Sizable[origin] ?? null;
-    if (result2 === null)
-      return result2;
+    const result = Sizable[origin] ?? null;
+    if (result === null)
+      return result;
     return {
-      unit: result2.unit[unitType],
-      verb: result2.verb[targetShouldBe][inclusive ? "inclusive" : "notInclusive"]
+      unit: result.unit[unitType],
+      verb: result.verb[targetShouldBe][inclusive ? "inclusive" : "notInclusive"]
     };
   }
   __name(getSizing, "getSizing");
@@ -16893,11 +16893,11 @@ function process2(schema, ctx, _params = { path: [], schemaPath: [] }) {
     }
     return seen.schema;
   }
-  const result2 = { schema: {}, count: 1, cycle: void 0, path: _params.path };
-  ctx.seen.set(schema, result2);
+  const result = { schema: {}, count: 1, cycle: void 0, path: _params.path };
+  ctx.seen.set(schema, result);
   const overrideSchema = schema._zod.toJSONSchema?.();
   if (overrideSchema) {
-    result2.schema = overrideSchema;
+    result.schema = overrideSchema;
   } else {
     const params = {
       ..._params,
@@ -16905,9 +16905,9 @@ function process2(schema, ctx, _params = { path: [], schemaPath: [] }) {
       path: _params.path
     };
     if (schema._zod.processJSONSchema) {
-      schema._zod.processJSONSchema(ctx, result2.schema, params);
+      schema._zod.processJSONSchema(ctx, result.schema, params);
     } else {
-      const _json = result2.schema;
+      const _json = result.schema;
       const processor = ctx.processors[def.type];
       if (!processor) {
         throw new Error(`[toJSONSchema]: Non-representable type encountered: ${def.type}`);
@@ -16916,22 +16916,22 @@ function process2(schema, ctx, _params = { path: [], schemaPath: [] }) {
     }
     const parent = schema._zod.parent;
     if (parent) {
-      if (!result2.ref)
-        result2.ref = parent;
+      if (!result.ref)
+        result.ref = parent;
       process2(parent, ctx, params);
       ctx.seen.get(parent).isParent = true;
     }
   }
   const meta3 = ctx.metadataRegistry.get(schema);
   if (meta3)
-    Object.assign(result2.schema, meta3);
+    Object.assign(result.schema, meta3);
   if (ctx.io === "input" && isTransforming(schema)) {
-    delete result2.schema.examples;
-    delete result2.schema.default;
+    delete result.schema.examples;
+    delete result.schema.default;
   }
-  if (ctx.io === "input" && result2.schema._prefault)
-    (_a21 = result2.schema).default ?? (_a21.default = result2.schema._prefault);
-  delete result2.schema._prefault;
+  if (ctx.io === "input" && result.schema._prefault)
+    (_a21 = result.schema).default ?? (_a21.default = result.schema._prefault);
+  delete result.schema._prefault;
   const _result = ctx.seen.get(schema);
   return _result.schema;
 }
@@ -17096,13 +17096,13 @@ function finalize(ctx, schema) {
   for (const entry of [...ctx.seen.entries()].reverse()) {
     flattenRef(entry[0]);
   }
-  const result2 = {};
+  const result = {};
   if (ctx.target === "draft-2020-12") {
-    result2.$schema = "https://json-schema.org/draft/2020-12/schema";
+    result.$schema = "https://json-schema.org/draft/2020-12/schema";
   } else if (ctx.target === "draft-07") {
-    result2.$schema = "http://json-schema.org/draft-07/schema#";
+    result.$schema = "http://json-schema.org/draft-07/schema#";
   } else if (ctx.target === "draft-04") {
-    result2.$schema = "http://json-schema.org/draft-04/schema#";
+    result.$schema = "http://json-schema.org/draft-04/schema#";
   } else if (ctx.target === "openapi-3.0") {
   } else {
   }
@@ -17110,9 +17110,9 @@ function finalize(ctx, schema) {
     const id = ctx.external.registry.get(schema)?.id;
     if (!id)
       throw new Error("Schema is missing an `id` property");
-    result2.$id = ctx.external.uri(id);
+    result.$id = ctx.external.uri(id);
   }
-  Object.assign(result2, root.def ?? root.schema);
+  Object.assign(result, root.def ?? root.schema);
   const defs = ctx.external?.defs ?? {};
   for (const entry of ctx.seen.entries()) {
     const seen = entry[1];
@@ -17124,14 +17124,14 @@ function finalize(ctx, schema) {
   } else {
     if (Object.keys(defs).length > 0) {
       if (ctx.target === "draft-2020-12") {
-        result2.$defs = defs;
+        result.$defs = defs;
       } else {
-        result2.definitions = defs;
+        result.definitions = defs;
       }
     }
   }
   try {
-    const finalized = JSON.parse(JSON.stringify(result2));
+    const finalized = JSON.parse(JSON.stringify(result));
     Object.defineProperty(finalized, "~standard", {
       value: {
         ...schema["~standard"],
@@ -17839,8 +17839,8 @@ var JSONSchemaGenerator = class {
         this.ctx.external = _params.external;
     }
     extractDefs(this.ctx, schema);
-    const result2 = finalize(this.ctx, schema);
-    const { "~standard": _2, ...plainResult } = result2;
+    const result = finalize(this.ctx, schema);
+    const { "~standard": _2, ...plainResult } = result;
     return plainResult;
   }
 };
@@ -19675,11 +19675,11 @@ function convertBaseSchema(schema, ctx) {
         } else if (schemasToIntersect.length === 1) {
           zodSchema2 = schemasToIntersect[0];
         } else {
-          let result2 = z2.intersection(schemasToIntersect[0], schemasToIntersect[1]);
+          let result = z2.intersection(schemasToIntersect[0], schemasToIntersect[1]);
           for (let i2 = 2; i2 < schemasToIntersect.length; i2++) {
-            result2 = z2.intersection(result2, schemasToIntersect[i2]);
+            result = z2.intersection(result, schemasToIntersect[i2]);
           }
-          zodSchema2 = result2;
+          zodSchema2 = result;
         }
         break;
       }
@@ -19771,12 +19771,12 @@ function convertSchema(schema, ctx) {
     if (schema.allOf.length === 0) {
       baseSchema = hasExplicitType ? baseSchema : z2.any();
     } else {
-      let result2 = hasExplicitType ? baseSchema : convertSchema(schema.allOf[0], ctx);
+      let result = hasExplicitType ? baseSchema : convertSchema(schema.allOf[0], ctx);
       const startIdx = hasExplicitType ? 0 : 1;
       for (let i2 = startIdx; i2 < schema.allOf.length; i2++) {
-        result2 = z2.intersection(result2, convertSchema(schema.allOf[i2], ctx));
+        result = z2.intersection(result, convertSchema(schema.allOf[i2], ctx));
       }
-      baseSchema = result2;
+      baseSchema = result;
     }
   }
   if (schema.nullable === true && ctx.version === "openapi-3.0") {
@@ -20367,9 +20367,9 @@ var ParseInputLazyPath = class {
     return this._cachedPath;
   }
 };
-var handleResult = /* @__PURE__ */ __name((ctx, result2) => {
-  if (isValid(result2)) {
-    return { success: true, data: result2.value };
+var handleResult = /* @__PURE__ */ __name((ctx, result) => {
+  if (isValid(result)) {
+    return { success: true, data: result.value };
   } else {
     if (!ctx.common.issues.length) {
       throw new Error("Validation failed but no issues detected.");
@@ -20444,21 +20444,21 @@ var ZodType2 = class {
     };
   }
   _parseSync(input) {
-    const result2 = this._parse(input);
-    if (isAsync(result2)) {
+    const result = this._parse(input);
+    if (isAsync(result)) {
       throw new Error("Synchronous parse encountered promise.");
     }
-    return result2;
+    return result;
   }
   _parseAsync(input) {
-    const result2 = this._parse(input);
-    return Promise.resolve(result2);
+    const result = this._parse(input);
+    return Promise.resolve(result);
   }
   parse(data, params) {
-    const result2 = this.safeParse(data, params);
-    if (result2.success)
-      return result2.data;
-    throw result2.error;
+    const result = this.safeParse(data, params);
+    if (result.success)
+      return result.data;
+    throw result.error;
   }
   safeParse(data, params) {
     const ctx = {
@@ -20473,8 +20473,8 @@ var ZodType2 = class {
       data,
       parsedType: getParsedType2(data)
     };
-    const result2 = this._parseSync({ data, path: ctx.path, parent: ctx });
-    return handleResult(ctx, result2);
+    const result = this._parseSync({ data, path: ctx.path, parent: ctx });
+    return handleResult(ctx, result);
   }
   "~validate"(data) {
     const ctx = {
@@ -20490,9 +20490,9 @@ var ZodType2 = class {
     };
     if (!this["~standard"].async) {
       try {
-        const result2 = this._parseSync({ data, path: [], parent: ctx });
-        return isValid(result2) ? {
-          value: result2.value
+        const result = this._parseSync({ data, path: [], parent: ctx });
+        return isValid(result) ? {
+          value: result.value
         } : {
           issues: ctx.common.issues
         };
@@ -20506,17 +20506,17 @@ var ZodType2 = class {
         };
       }
     }
-    return this._parseAsync({ data, path: [], parent: ctx }).then((result2) => isValid(result2) ? {
-      value: result2.value
+    return this._parseAsync({ data, path: [], parent: ctx }).then((result) => isValid(result) ? {
+      value: result.value
     } : {
       issues: ctx.common.issues
     });
   }
   async parseAsync(data, params) {
-    const result2 = await this.safeParseAsync(data, params);
-    if (result2.success)
-      return result2.data;
-    throw result2.error;
+    const result = await this.safeParseAsync(data, params);
+    if (result.success)
+      return result.data;
+    throw result.error;
   }
   async safeParseAsync(data, params) {
     const ctx = {
@@ -20532,8 +20532,8 @@ var ZodType2 = class {
       parsedType: getParsedType2(data)
     };
     const maybeAsyncResult = this._parse({ data, path: ctx.path, parent: ctx });
-    const result2 = await (isAsync(maybeAsyncResult) ? maybeAsyncResult : Promise.resolve(maybeAsyncResult));
-    return handleResult(ctx, result2);
+    const result = await (isAsync(maybeAsyncResult) ? maybeAsyncResult : Promise.resolve(maybeAsyncResult));
+    return handleResult(ctx, result);
   }
   refine(check2, message) {
     const getIssueProperties = /* @__PURE__ */ __name((val) => {
@@ -20546,13 +20546,13 @@ var ZodType2 = class {
       }
     }, "getIssueProperties");
     return this._refinement((val, ctx) => {
-      const result2 = check2(val);
+      const result = check2(val);
       const setError = /* @__PURE__ */ __name(() => ctx.addIssue({
         code: ZodIssueCode2.custom,
         ...getIssueProperties(val)
       }), "setError");
-      if (typeof Promise !== "undefined" && result2 instanceof Promise) {
-        return result2.then((data) => {
+      if (typeof Promise !== "undefined" && result instanceof Promise) {
+        return result.then((data) => {
           if (!data) {
             setError();
             return false;
@@ -20561,7 +20561,7 @@ var ZodType2 = class {
           }
         });
       }
-      if (!result2) {
+      if (!result) {
         setError();
         return false;
       } else {
@@ -22102,14 +22102,14 @@ var ZodArray2 = class _ZodArray extends ZodType2 {
     if (ctx.common.async) {
       return Promise.all([...ctx.data].map((item, i2) => {
         return def.type._parseAsync(new ParseInputLazyPath(ctx, item, ctx.path, i2));
-      })).then((result3) => {
-        return ParseStatus.mergeArray(status, result3);
+      })).then((result2) => {
+        return ParseStatus.mergeArray(status, result2);
       });
     }
-    const result2 = [...ctx.data].map((item, i2) => {
+    const result = [...ctx.data].map((item, i2) => {
       return def.type._parseSync(new ParseInputLazyPath(ctx, item, ctx.path, i2));
     });
-    return ParseStatus.mergeArray(status, result2);
+    return ParseStatus.mergeArray(status, result);
   }
   get element() {
     return this._def.type;
@@ -22522,18 +22522,18 @@ var ZodUnion2 = class extends ZodType2 {
     const { ctx } = this._processInputParams(input);
     const options = this._def.options;
     function handleResults(results) {
-      for (const result2 of results) {
-        if (result2.result.status === "valid") {
-          return result2.result;
+      for (const result of results) {
+        if (result.result.status === "valid") {
+          return result.result;
         }
       }
-      for (const result2 of results) {
-        if (result2.result.status === "dirty") {
-          ctx.common.issues.push(...result2.ctx.common.issues);
-          return result2.result;
+      for (const result of results) {
+        if (result.result.status === "dirty") {
+          ctx.common.issues.push(...result.ctx.common.issues);
+          return result.result;
         }
       }
-      const unionErrors = results.map((result2) => new ZodError2(result2.ctx.common.issues));
+      const unionErrors = results.map((result) => new ZodError2(result.ctx.common.issues));
       addIssueToContext(ctx, {
         code: ZodIssueCode2.invalid_union,
         unionErrors
@@ -22572,15 +22572,15 @@ var ZodUnion2 = class extends ZodType2 {
           },
           parent: null
         };
-        const result2 = option._parseSync({
+        const result = option._parseSync({
           data: ctx.data,
           path: ctx.path,
           parent: childCtx
         });
-        if (result2.status === "valid") {
-          return result2;
-        } else if (result2.status === "dirty" && !dirty) {
-          dirty = { result: result2, ctx: childCtx };
+        if (result.status === "valid") {
+          return result;
+        } else if (result.status === "dirty" && !dirty) {
+          dirty = { result, ctx: childCtx };
         }
         if (childCtx.common.issues.length) {
           issues.push(childCtx.common.issues);
@@ -23150,9 +23150,9 @@ var ZodFunction2 = class _ZodFunction extends ZodType2 {
           error48.addIssue(makeArgsIssue(args, e2));
           throw error48;
         });
-        const result2 = await Reflect.apply(fn, this, parsedArgs);
-        const parsedReturns = await me2._def.returns._def.type.parseAsync(result2, params).catch((e2) => {
-          error48.addIssue(makeReturnsIssue(result2, e2));
+        const result = await Reflect.apply(fn, this, parsedArgs);
+        const parsedReturns = await me2._def.returns._def.type.parseAsync(result, params).catch((e2) => {
+          error48.addIssue(makeReturnsIssue(result, e2));
           throw error48;
         });
         return parsedReturns;
@@ -23164,10 +23164,10 @@ var ZodFunction2 = class _ZodFunction extends ZodType2 {
         if (!parsedArgs.success) {
           throw new ZodError2([makeArgsIssue(args, parsedArgs.error)]);
         }
-        const result2 = Reflect.apply(fn, this, parsedArgs.data);
-        const parsedReturns = me2._def.returns.safeParse(result2, params);
+        const result = Reflect.apply(fn, this, parsedArgs.data);
+        const parsedReturns = me2._def.returns.safeParse(result, params);
         if (!parsedReturns.success) {
-          throw new ZodError2([makeReturnsIssue(result2, parsedReturns.error)]);
+          throw new ZodError2([makeReturnsIssue(result, parsedReturns.error)]);
         }
         return parsedReturns.data;
       });
@@ -23438,43 +23438,43 @@ var ZodEffects = class extends ZodType2 {
         return Promise.resolve(processed).then(async (processed2) => {
           if (status.value === "aborted")
             return INVALID;
-          const result2 = await this._def.schema._parseAsync({
+          const result = await this._def.schema._parseAsync({
             data: processed2,
             path: ctx.path,
             parent: ctx
           });
-          if (result2.status === "aborted")
+          if (result.status === "aborted")
             return INVALID;
-          if (result2.status === "dirty")
-            return DIRTY(result2.value);
+          if (result.status === "dirty")
+            return DIRTY(result.value);
           if (status.value === "dirty")
-            return DIRTY(result2.value);
-          return result2;
+            return DIRTY(result.value);
+          return result;
         });
       } else {
         if (status.value === "aborted")
           return INVALID;
-        const result2 = this._def.schema._parseSync({
+        const result = this._def.schema._parseSync({
           data: processed,
           path: ctx.path,
           parent: ctx
         });
-        if (result2.status === "aborted")
+        if (result.status === "aborted")
           return INVALID;
-        if (result2.status === "dirty")
-          return DIRTY(result2.value);
+        if (result.status === "dirty")
+          return DIRTY(result.value);
         if (status.value === "dirty")
-          return DIRTY(result2.value);
-        return result2;
+          return DIRTY(result.value);
+        return result;
       }
     }
     if (effect.type === "refinement") {
       const executeRefinement = /* @__PURE__ */ __name((acc) => {
-        const result2 = effect.refinement(acc, checkCtx);
+        const result = effect.refinement(acc, checkCtx);
         if (ctx.common.async) {
-          return Promise.resolve(result2);
+          return Promise.resolve(result);
         }
-        if (result2 instanceof Promise) {
+        if (result instanceof Promise) {
           throw new Error("Async refinement encountered during synchronous parse operation. Use .parseAsync instead.");
         }
         return acc;
@@ -23512,18 +23512,18 @@ var ZodEffects = class extends ZodType2 {
         });
         if (!isValid(base))
           return INVALID;
-        const result2 = effect.transform(base.value, checkCtx);
-        if (result2 instanceof Promise) {
+        const result = effect.transform(base.value, checkCtx);
+        if (result instanceof Promise) {
           throw new Error(`Asynchronous transform encountered during synchronous parse operation. Use .parseAsync instead.`);
         }
-        return { status: status.value, value: result2 };
+        return { status: status.value, value: result };
       } else {
         return this._def.schema._parseAsync({ data: ctx.data, path: ctx.path, parent: ctx }).then((base) => {
           if (!isValid(base))
             return INVALID;
-          return Promise.resolve(effect.transform(base.value, checkCtx)).then((result2) => ({
+          return Promise.resolve(effect.transform(base.value, checkCtx)).then((result) => ({
             status: status.value,
-            value: result2
+            value: result
           }));
         });
       }
@@ -23632,18 +23632,18 @@ var ZodCatch2 = class extends ZodType2 {
         issues: []
       }
     };
-    const result2 = this._def.innerType._parse({
+    const result = this._def.innerType._parse({
       data: newCtx.data,
       path: newCtx.path,
       parent: {
         ...newCtx
       }
     });
-    if (isAsync(result2)) {
-      return result2.then((result3) => {
+    if (isAsync(result)) {
+      return result.then((result2) => {
         return {
           status: "valid",
-          value: result3.status === "valid" ? result3.value : this._def.catchValue({
+          value: result2.status === "valid" ? result2.value : this._def.catchValue({
             get error() {
               return new ZodError2(newCtx.common.issues);
             },
@@ -23654,7 +23654,7 @@ var ZodCatch2 = class extends ZodType2 {
     } else {
       return {
         status: "valid",
-        value: result2.status === "valid" ? result2.value : this._def.catchValue({
+        value: result.status === "valid" ? result.value : this._def.catchValue({
           get error() {
             return new ZodError2(newCtx.common.issues);
           },
@@ -23780,14 +23780,14 @@ var ZodReadonly2 = class extends ZodType2 {
     __name(this, "ZodReadonly");
   }
   _parse(input) {
-    const result2 = this._def.innerType._parse(input);
+    const result = this._def.innerType._parse(input);
     const freeze = /* @__PURE__ */ __name((data) => {
       if (isValid(data)) {
         data.value = Object.freeze(data.value);
       }
       return data;
     }, "freeze");
-    return isAsync(result2) ? result2.then((data) => freeze(data)) : freeze(result2);
+    return isAsync(result) ? result.then((data) => freeze(data)) : freeze(result);
   }
   unwrap() {
     return this._def.innerType;
@@ -24206,13 +24206,13 @@ async function readResponseWithSizeLimit({
       reader.releaseLock();
     }
   }
-  const result2 = new Uint8Array(totalBytes);
+  const result = new Uint8Array(totalBytes);
   let offset = 0;
   for (const chunk of chunks) {
-    result2.set(chunk, offset);
+    result.set(chunk, offset);
     offset += chunk.length;
   }
-  return result2;
+  return result;
 }
 __name(readResponseWithSizeLimit, "readResponseWithSizeLimit");
 function validateDownloadUrl(url2) {
@@ -24400,8 +24400,8 @@ function isBunNetworkError(error48) {
   if (!(error48 instanceof Error)) {
     return false;
   }
-  const code2 = error48.code;
-  if (typeof code2 === "string" && BUN_ERROR_CODES.includes(code2)) {
+  const code = error48.code;
+  if (typeof code === "string" && BUN_ERROR_CODES.includes(code)) {
     return true;
   }
   return false;
@@ -25131,14 +25131,14 @@ var ALPHA_NUMERIC = new Set(
   "ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvxyz0123456789"
 );
 function escapeNonAlphaNumeric(source) {
-  let result2 = "";
+  let result = "";
   for (let i2 = 0; i2 < source.length; i2++) {
     if (!ALPHA_NUMERIC.has(source[i2])) {
-      result2 += "\\";
+      result += "\\";
     }
-    result2 += source[i2];
+    result += source[i2];
   }
-  return result2;
+  return result;
 }
 __name(escapeNonAlphaNumeric, "escapeNonAlphaNumeric");
 function addFormat(schema, value, message, refs) {
@@ -25480,7 +25480,7 @@ function parseNumberDef(def) {
 }
 __name(parseNumberDef, "parseNumberDef");
 function parseObjectDef(def, refs) {
-  const result2 = {
+  const result = {
     type: "object",
     properties: {}
   };
@@ -25500,19 +25500,19 @@ function parseObjectDef(def, refs) {
     if (parsedDef === void 0) {
       continue;
     }
-    result2.properties[propName] = parsedDef;
+    result.properties[propName] = parsedDef;
     if (!propOptional) {
       required2.push(propName);
     }
   }
   if (required2.length) {
-    result2.required = required2;
+    result.required = required2;
   }
   const additionalProperties = decideAdditionalProperties(def, refs);
   if (additionalProperties !== void 0) {
-    result2.additionalProperties = additionalProperties;
+    result.additionalProperties = additionalProperties;
   }
-  return result2;
+  return result;
 }
 __name(parseObjectDef, "parseObjectDef");
 function decideAdditionalProperties(def, refs) {
@@ -25901,12 +25901,12 @@ function standardSchema(standardSchema2) {
     ),
     {
       validate: /* @__PURE__ */ __name(async (value) => {
-        const result2 = await standardSchema2["~standard"].validate(value);
-        return "value" in result2 ? { success: true, value: result2.value } : {
+        const result = await standardSchema2["~standard"].validate(value);
+        return "value" in result ? { success: true, value: result.value } : {
           success: false,
           error: new TypeValidationError({
             value,
-            cause: result2.issues
+            cause: result.issues
           })
         };
       }, "validate")
@@ -25924,8 +25924,8 @@ function zod3Schema(zodSchema2, options) {
     }),
     {
       validate: /* @__PURE__ */ __name(async (value) => {
-        const result2 = await zodSchema2.safeParseAsync(value);
-        return result2.success ? { success: true, value: result2.data } : { success: false, error: result2.error };
+        const result = await zodSchema2.safeParseAsync(value);
+        return result.success ? { success: true, value: result.data } : { success: false, error: result.error };
       }, "validate")
     }
   );
@@ -25945,8 +25945,8 @@ function zod4Schema(zodSchema2, options) {
     ),
     {
       validate: /* @__PURE__ */ __name(async (value) => {
-        const result2 = await safeParseAsync2(zodSchema2, value);
-        return result2.success ? { success: true, value: result2.data } : { success: false, error: result2.error };
+        const result = await safeParseAsync2(zodSchema2, value);
+        return result.success ? { success: true, value: result.data } : { success: false, error: result.error };
       }, "validate")
     }
   );
@@ -25969,11 +25969,11 @@ async function validateTypes({
   schema,
   context: context2
 }) {
-  const result2 = await safeValidateTypes({ value, schema, context: context2 });
-  if (!result2.success) {
-    throw TypeValidationError.wrap({ value, cause: result2.error, context: context2 });
+  const result = await safeValidateTypes({ value, schema, context: context2 });
+  if (!result.success) {
+    throw TypeValidationError.wrap({ value, cause: result.error, context: context2 });
   }
-  return result2.value;
+  return result.value;
 }
 __name(validateTypes, "validateTypes");
 async function safeValidateTypes({
@@ -25986,13 +25986,13 @@ async function safeValidateTypes({
     if (actualSchema.validate == null) {
       return { success: true, value, rawValue: value };
     }
-    const result2 = await actualSchema.validate(value);
-    if (result2.success) {
-      return { success: true, value: result2.value, rawValue: value };
+    const result = await actualSchema.validate(value);
+    if (result.success) {
+      return { success: true, value: result.value, rawValue: value };
     }
     return {
       success: false,
-      error: TypeValidationError.wrap({ value, cause: result2.error, context: context2 }),
+      error: TypeValidationError.wrap({ value, cause: result.error, context: context2 }),
       rawValue: value
     };
   } catch (error48) {
@@ -26404,16 +26404,16 @@ async function* executeTool({
   input,
   options
 }) {
-  const result2 = execute(input, options);
-  if (isAsyncIterable(result2)) {
+  const result = execute(input, options);
+  if (isAsyncIterable(result)) {
     let lastOutput;
-    for await (const output of result2) {
+    for await (const output of result) {
       lastOutput = output;
       yield { type: "preliminary", output };
     }
     yield { type: "final", output: lastOutput };
   } else {
-    yield { type: "final", output: await result2 };
+    yield { type: "final", output: await result };
   }
 }
 __name(executeTool, "executeTool");
@@ -26854,11 +26854,11 @@ function extractApiCallResponse(error48) {
 __name(extractApiCallResponse, "extractApiCallResponse");
 var GATEWAY_AUTH_METHOD_HEADER = "ai-gateway-auth-method";
 async function parseAuthMethod(headers) {
-  const result2 = await safeValidateTypes({
+  const result = await safeValidateTypes({
     value: headers[GATEWAY_AUTH_METHOD_HEADER],
     schema: gatewayAuthMethodSchema
   });
-  return result2.success ? result2.value : void 0;
+  return result.success ? result.value : void 0;
 }
 __name(parseAuthMethod, "parseAuthMethod");
 var gatewayAuthMethodSchema = lazySchema(
@@ -28287,19 +28287,19 @@ function asLanguageModelV3(model) {
           return "v3";
         case "doGenerate":
           return async (...args) => {
-            const result2 = await target.doGenerate(...args);
+            const result = await target.doGenerate(...args);
             return {
-              ...result2,
-              finishReason: convertV2FinishReasonToV3(result2.finishReason),
-              usage: convertV2UsageToV3(result2.usage)
+              ...result,
+              finishReason: convertV2FinishReasonToV3(result.finishReason),
+              usage: convertV2UsageToV3(result.usage)
             };
           };
         case "doStream":
           return async (...args) => {
-            const result2 = await target.doStream(...args);
+            const result = await target.doStream(...args);
             return {
-              ...result2,
-              stream: convertV2StreamToV3(result2.stream)
+              ...result,
+              stream: convertV2StreamToV3(result.stream)
             };
           };
         default:
@@ -29555,11 +29555,11 @@ async function recordSpan({
     async (span) => {
       const ctx = import_api2.context.active();
       try {
-        const result2 = await import_api2.context.with(ctx, () => fn(span));
+        const result = await import_api2.context.with(ctx, () => fn(span));
         if (endWhenDone) {
           span.end();
         }
-        return result2;
+        return result;
       } catch (error48) {
         try {
           recordErrorOnSpan(span, error48);
@@ -29604,9 +29604,9 @@ async function selectTelemetryAttributes({
       if ((telemetry == null ? void 0 : telemetry.recordInputs) === false) {
         continue;
       }
-      const result2 = await value.input();
-      if (result2 != null) {
-        resultAttributes[key] = result2;
+      const result = await value.input();
+      if (result != null) {
+        resultAttributes[key] = result;
       }
       continue;
     }
@@ -29614,9 +29614,9 @@ async function selectTelemetryAttributes({
       if ((telemetry == null ? void 0 : telemetry.recordOutputs) === false) {
         continue;
       }
-      const result2 = await value.output();
-      if (result2 != null) {
-        resultAttributes[key] = result2;
+      const result = await value.output();
+      if (result != null) {
+        resultAttributes[key] = result;
       }
       continue;
     }
@@ -29758,7 +29758,7 @@ function mergeObjects(base, overrides) {
   if (overrides === void 0) {
     return base;
   }
-  const result2 = { ...base };
+  const result = { ...base };
   for (const key in overrides) {
     if (Object.prototype.hasOwnProperty.call(overrides, key)) {
       const overridesValue = overrides[key];
@@ -29768,16 +29768,16 @@ function mergeObjects(base, overrides) {
       const isSourceObject = overridesValue !== null && typeof overridesValue === "object" && !Array.isArray(overridesValue) && !(overridesValue instanceof Date) && !(overridesValue instanceof RegExp);
       const isTargetObject = baseValue !== null && baseValue !== void 0 && typeof baseValue === "object" && !Array.isArray(baseValue) && !(baseValue instanceof Date) && !(baseValue instanceof RegExp);
       if (isSourceObject && isTargetObject) {
-        result2[key] = mergeObjects(
+        result[key] = mergeObjects(
           baseValue,
           overridesValue
         );
       } else {
-        result2[key] = overridesValue;
+        result[key] = overridesValue;
       }
     }
   }
-  return result2;
+  return result;
 }
 __name(mergeObjects, "mergeObjects");
 function getRetryDelayInMs({
@@ -30470,12 +30470,12 @@ function fixJson(input) {
       }
     }
   }
-  let result2 = input.slice(0, lastValidIndex + 1);
+  let result = input.slice(0, lastValidIndex + 1);
   for (let i2 = stack.length - 1; i2 >= 0; i2--) {
     const state = stack[i2];
     switch (state) {
       case "INSIDE_STRING": {
-        result2 += '"';
+        result += '"';
         break;
       }
       case "INSIDE_OBJECT_KEY":
@@ -30484,41 +30484,41 @@ function fixJson(input) {
       case "INSIDE_OBJECT_START":
       case "INSIDE_OBJECT_BEFORE_VALUE":
       case "INSIDE_OBJECT_AFTER_VALUE": {
-        result2 += "}";
+        result += "}";
         break;
       }
       case "INSIDE_ARRAY_START":
       case "INSIDE_ARRAY_AFTER_COMMA":
       case "INSIDE_ARRAY_AFTER_VALUE": {
-        result2 += "]";
+        result += "]";
         break;
       }
       case "INSIDE_LITERAL": {
         const partialLiteral = input.substring(literalStart, input.length);
         if ("true".startsWith(partialLiteral)) {
-          result2 += "true".slice(partialLiteral.length);
+          result += "true".slice(partialLiteral.length);
         } else if ("false".startsWith(partialLiteral)) {
-          result2 += "false".slice(partialLiteral.length);
+          result += "false".slice(partialLiteral.length);
         } else if ("null".startsWith(partialLiteral)) {
-          result2 += "null".slice(partialLiteral.length);
+          result += "null".slice(partialLiteral.length);
         }
       }
     }
   }
-  return result2;
+  return result;
 }
 __name(fixJson, "fixJson");
 async function parsePartialJson(jsonText) {
   if (jsonText === void 0) {
     return { value: void 0, state: "undefined-input" };
   }
-  let result2 = await safeParseJSON({ text: jsonText });
-  if (result2.success) {
-    return { value: result2.value, state: "successful-parse" };
+  let result = await safeParseJSON({ text: jsonText });
+  if (result.success) {
+    return { value: result.value, state: "successful-parse" };
   }
-  result2 = await safeParseJSON({ text: fixJson(jsonText) });
-  if (result2.success) {
-    return { value: result2.value, state: "repaired-parse" };
+  result = await safeParseJSON({ text: fixJson(jsonText) });
+  if (result.success) {
+    return { value: result.value, state: "repaired-parse" };
   }
   return { value: void 0, state: "failed-parse" };
 }
@@ -30579,8 +30579,8 @@ var object2 = /* @__PURE__ */ __name(({
       return validationResult.value;
     },
     async parsePartialOutput({ text: text2 }) {
-      const result2 = await parsePartialJson(text2);
-      switch (result2.state) {
+      const result = await parsePartialJson(text2);
+      switch (result.state) {
         case "failed-parse":
         case "undefined-input": {
           return void 0;
@@ -30589,7 +30589,7 @@ var object2 = /* @__PURE__ */ __name(({
         case "successful-parse": {
           return {
             // Note: currently no validation of partial results:
-            partial: result2.value
+            partial: result.value
           };
         }
       }
@@ -30670,19 +30670,19 @@ var array2 = /* @__PURE__ */ __name(({
       return outerValue.elements;
     },
     async parsePartialOutput({ text: text2 }) {
-      const result2 = await parsePartialJson(text2);
-      switch (result2.state) {
+      const result = await parsePartialJson(text2);
+      switch (result.state) {
         case "failed-parse":
         case "undefined-input": {
           return void 0;
         }
         case "repaired-parse":
         case "successful-parse": {
-          const outerValue = result2.value;
+          const outerValue = result.value;
           if (outerValue == null || typeof outerValue !== "object" || !("elements" in outerValue) || !Array.isArray(outerValue.elements)) {
             return void 0;
           }
-          const rawElements = result2.state === "repaired-parse" && outerValue.elements.length > 0 ? outerValue.elements.slice(0, -1) : outerValue.elements;
+          const rawElements = result.state === "repaired-parse" && outerValue.elements.length > 0 ? outerValue.elements.slice(0, -1) : outerValue.elements;
           const parsedElements = [];
           for (const rawElement of rawElements) {
             const validationResult = await safeValidateTypes({
@@ -30762,22 +30762,22 @@ var choice = /* @__PURE__ */ __name(({
       return outerValue.result;
     },
     async parsePartialOutput({ text: text2 }) {
-      const result2 = await parsePartialJson(text2);
-      switch (result2.state) {
+      const result = await parsePartialJson(text2);
+      switch (result.state) {
         case "failed-parse":
         case "undefined-input": {
           return void 0;
         }
         case "repaired-parse":
         case "successful-parse": {
-          const outerValue = result2.value;
+          const outerValue = result.value;
           if (outerValue == null || typeof outerValue !== "object" || !("result" in outerValue) || typeof outerValue.result !== "string") {
             return void 0;
           }
           const potentialMatches = choiceOptions.filter(
             (choiceOption) => choiceOption.startsWith(outerValue.result)
           );
-          if (result2.state === "successful-parse") {
+          if (result.state === "successful-parse") {
             return potentialMatches.includes(outerValue.result) ? { partial: outerValue.result } : void 0;
           } else {
             return potentialMatches.length === 1 ? { partial: potentialMatches[0] } : void 0;
@@ -30816,15 +30816,15 @@ var json2 = /* @__PURE__ */ __name(({
       return parseResult.value;
     },
     async parsePartialOutput({ text: text2 }) {
-      const result2 = await parsePartialJson(text2);
-      switch (result2.state) {
+      const result = await parsePartialJson(text2);
+      switch (result.state) {
         case "failed-parse":
         case "undefined-input": {
           return void 0;
         }
         case "repaired-parse":
         case "successful-parse": {
-          return result2.value === void 0 ? void 0 : { partial: result2.value };
+          return result.value === void 0 ? void 0 : { partial: result.value };
         }
       }
     },
@@ -31043,7 +31043,7 @@ async function isStopConditionMet({
   stopConditions,
   steps
 }) {
-  return (await Promise.all(stopConditions.map((condition) => condition({ steps })))).some((result2) => result2);
+  return (await Promise.all(stopConditions.map((condition) => condition({ steps })))).some((result) => result);
 }
 __name(isStopConditionMet, "isStopConditionMet");
 async function toResponseMessages({
@@ -31527,7 +31527,7 @@ async function generateText({
                   tracer,
                   fn: /* @__PURE__ */ __name(async (span2) => {
                     var _a232, _b23, _c2, _d2, _e22, _f2, _g2, _h2;
-                    const result2 = await stepModel.doGenerate({
+                    const result = await stepModel.doGenerate({
                       ...callSettings2,
                       tools: stepTools,
                       toolChoice: stepToolChoice,
@@ -31538,26 +31538,26 @@ async function generateText({
                       headers: headersWithUserAgent
                     });
                     const responseData = {
-                      id: (_b23 = (_a232 = result2.response) == null ? void 0 : _a232.id) != null ? _b23 : generateId2(),
-                      timestamp: (_d2 = (_c2 = result2.response) == null ? void 0 : _c2.timestamp) != null ? _d2 : /* @__PURE__ */ new Date(),
-                      modelId: (_f2 = (_e22 = result2.response) == null ? void 0 : _e22.modelId) != null ? _f2 : stepModel.modelId,
-                      headers: (_g2 = result2.response) == null ? void 0 : _g2.headers,
-                      body: (_h2 = result2.response) == null ? void 0 : _h2.body
+                      id: (_b23 = (_a232 = result.response) == null ? void 0 : _a232.id) != null ? _b23 : generateId2(),
+                      timestamp: (_d2 = (_c2 = result.response) == null ? void 0 : _c2.timestamp) != null ? _d2 : /* @__PURE__ */ new Date(),
+                      modelId: (_f2 = (_e22 = result.response) == null ? void 0 : _e22.modelId) != null ? _f2 : stepModel.modelId,
+                      headers: (_g2 = result.response) == null ? void 0 : _g2.headers,
+                      body: (_h2 = result.response) == null ? void 0 : _h2.body
                     };
                     span2.setAttributes(
                       await selectTelemetryAttributes({
                         telemetry,
                         attributes: {
-                          "ai.response.finishReason": result2.finishReason.unified,
+                          "ai.response.finishReason": result.finishReason.unified,
                           "ai.response.text": {
-                            output: /* @__PURE__ */ __name(() => extractTextContent(result2.content), "output")
+                            output: /* @__PURE__ */ __name(() => extractTextContent(result.content), "output")
                           },
                           "ai.response.reasoning": {
-                            output: /* @__PURE__ */ __name(() => extractReasoningContent(result2.content), "output")
+                            output: /* @__PURE__ */ __name(() => extractReasoningContent(result.content), "output")
                           },
                           "ai.response.toolCalls": {
                             output: /* @__PURE__ */ __name(() => {
-                              const toolCalls = asToolCalls(result2.content);
+                              const toolCalls = asToolCalls(result.content);
                               return toolCalls == null ? void 0 : JSON.stringify(toolCalls);
                             }, "output")
                           },
@@ -31565,23 +31565,23 @@ async function generateText({
                           "ai.response.model": responseData.modelId,
                           "ai.response.timestamp": responseData.timestamp.toISOString(),
                           "ai.response.providerMetadata": JSON.stringify(
-                            result2.providerMetadata
+                            result.providerMetadata
                           ),
                           // TODO rename telemetry attributes to inputTokens and outputTokens
-                          "ai.usage.promptTokens": result2.usage.inputTokens.total,
-                          "ai.usage.completionTokens": result2.usage.outputTokens.total,
+                          "ai.usage.promptTokens": result.usage.inputTokens.total,
+                          "ai.usage.completionTokens": result.usage.outputTokens.total,
                           // standardized gen-ai llm span attributes:
                           "gen_ai.response.finish_reasons": [
-                            result2.finishReason.unified
+                            result.finishReason.unified
                           ],
                           "gen_ai.response.id": responseData.id,
                           "gen_ai.response.model": responseData.modelId,
-                          "gen_ai.usage.input_tokens": result2.usage.inputTokens.total,
-                          "gen_ai.usage.output_tokens": result2.usage.outputTokens.total
+                          "gen_ai.usage.input_tokens": result.usage.inputTokens.total,
+                          "gen_ai.usage.output_tokens": result.usage.outputTokens.total
                         }
                       })
                     );
-                    return { ...result2, response: responseData };
+                    return { ...result, response: responseData };
                   }, "fn")
                 });
               }
@@ -34393,18 +34393,18 @@ function distributeTokenDetails(details, index, total) {
   if (details == null) {
     return {};
   }
-  const result2 = {};
+  const result = {};
   if (details.image_tokens != null) {
     const base = Math.floor(details.image_tokens / total);
     const remainder = details.image_tokens - base * (total - 1);
-    result2.imageTokens = index === total - 1 ? remainder : base;
+    result.imageTokens = index === total - 1 ? remainder : base;
   }
   if (details.text_tokens != null) {
     const base = Math.floor(details.text_tokens / total);
     const remainder = details.text_tokens - base * (total - 1);
-    result2.textTokens = index === total - 1 ? remainder : base;
+    result.textTokens = index === total - 1 ? remainder : base;
   }
-  return result2;
+  return result;
 }
 __name(distributeTokenDetails, "distributeTokenDetails");
 async function fileToBlob(file2) {
@@ -37407,12 +37407,12 @@ var OpenAIResponsesLanguageModel = class {
             toolName: toolNameMapping.toCustomToolName("file_search"),
             result: {
               queries: part.queries,
-              results: (_v = (_u = part.results) == null ? void 0 : _u.map((result2) => ({
-                attributes: result2.attributes,
-                fileId: result2.file_id,
-                filename: result2.filename,
-                score: result2.score,
-                text: result2.text
+              results: (_v = (_u = part.results) == null ? void 0 : _u.map((result) => ({
+                attributes: result.attributes,
+                fileId: result.file_id,
+                filename: result.filename,
+                score: result.score,
+                text: result.text
               }))) != null ? _v : null
             }
           });
@@ -37817,12 +37817,12 @@ var OpenAIResponsesLanguageModel = class {
                   toolName: toolNameMapping.toCustomToolName("file_search"),
                   result: {
                     queries: value.item.queries,
-                    results: (_e2 = (_d = value.item.results) == null ? void 0 : _d.map((result2) => ({
-                      attributes: result2.attributes,
-                      fileId: result2.file_id,
-                      filename: result2.filename,
-                      score: result2.score,
-                      text: result2.text
+                    results: (_e2 = (_d = value.item.results) == null ? void 0 : _d.map((result) => ({
+                      attributes: result.attributes,
+                      fileId: result.file_id,
+                      filename: result.filename,
+                      score: result.score,
+                      text: result.text
                     }))) != null ? _e2 : null
                   }
                 });
@@ -38887,19 +38887,19 @@ function createScreenshotTools() {
       execute: /* @__PURE__ */ __name(async ({ maxWidth, maxHeight }) => {
         try {
           const resultJson = await captureScreenPromise(maxWidth, maxHeight);
-          const result2 = JSON.parse(resultJson);
-          if (!result2.success) {
+          const result = JSON.parse(resultJson);
+          if (!result.success) {
             return {
               success: false,
-              message: `Screenshot capture failed: ${result2.error || "Unknown error"}`
+              message: `Screenshot capture failed: ${result.error || "Unknown error"}`
             };
           }
           return {
             success: true,
-            message: `Game view screenshot captured successfully (${result2.width}x${result2.height}).`,
-            base64: result2.base64,
-            width: result2.width,
-            height: result2.height
+            message: `Game view screenshot captured successfully (${result.width}x${result.height}).`,
+            base64: result.base64,
+            width: result.width,
+            height: result.height
           };
         } catch (error48) {
           return {
@@ -38910,17 +38910,17 @@ function createScreenshotTools() {
       }, "execute"),
       // Convert the tool result into multi-modal content
       // so the AI SDK sends the image as an actual image.
-      toModelOutput({ output: result2 }) {
-        if (!result2.success || !result2.base64) {
-          return { type: "content", value: [{ type: "text", text: result2.message }] };
+      toModelOutput({ output: result }) {
+        if (!result.success || !result.base64) {
+          return { type: "content", value: [{ type: "text", text: result.message }] };
         }
         return {
           type: "content",
           value: [
-            { type: "text", text: result2.message },
+            { type: "text", text: result.message },
             {
               type: "file-data",
-              data: result2.base64,
+              data: result.base64,
               mediaType: "image/png"
             }
           ]
@@ -38943,19 +38943,19 @@ function createScreenshotTools() {
       execute: /* @__PURE__ */ __name(async ({ maxWidth, maxHeight }) => {
         try {
           const resultJson = await captureSceneViewPromise(maxWidth, maxHeight);
-          const result2 = JSON.parse(resultJson);
-          if (!result2.success) {
+          const result = JSON.parse(resultJson);
+          if (!result.success) {
             return {
               success: false,
-              message: `Scene view capture failed: ${result2.error || "Unknown error"}`
+              message: `Scene view capture failed: ${result.error || "Unknown error"}`
             };
           }
           return {
             success: true,
-            message: `Scene view screenshot captured successfully (${result2.width}x${result2.height}).`,
-            base64: result2.base64,
-            width: result2.width,
-            height: result2.height
+            message: `Scene view screenshot captured successfully (${result.width}x${result.height}).`,
+            base64: result.base64,
+            width: result.width,
+            height: result.height
           };
         } catch (error48) {
           return {
@@ -38965,17 +38965,17 @@ function createScreenshotTools() {
         }
       }, "execute"),
       // Same multi-modal output as captureScreenshot
-      toModelOutput({ output: result2 }) {
-        if (!result2.success || !result2.base64) {
-          return { type: "content", value: [{ type: "text", text: result2.message }] };
+      toModelOutput({ output: result }) {
+        if (!result.success || !result.base64) {
+          return { type: "content", value: [{ type: "text", text: result.message }] };
         }
         return {
           type: "content",
           value: [
-            { type: "text", text: result2.message },
+            { type: "text", text: result.message },
             {
               type: "file-data",
-              data: result2.base64,
+              data: result.base64,
               mediaType: "image/png"
             }
           ]
@@ -39017,6 +39017,108 @@ function captureSceneViewPromise(maxWidth, maxHeight) {
   });
 }
 __name(captureSceneViewPromise, "captureSceneViewPromise");
+
+// src/tools/scene-view-tool.mts
+function createSceneViewNavigationTools() {
+  return {
+    /**
+     * Zoom the Scene view camera forward or backward (like mouse scroll wheel).
+     */
+    sceneViewZoom: tool({
+      description: 'Zoom the Unity Scene view camera in or out (Editor only). This is equivalent to scrolling the mouse wheel in the Scene view. Use "forward" or "in" to zoom closer to the pivot point, and "backward" or "out" to zoom farther away. The amount controls the intensity (1 = normal step, 2 = double, etc.). Use this before captureSceneView to get a closer or wider view of objects.',
+      inputSchema: external_exports.object({
+        direction: external_exports.enum(["forward", "backward", "in", "out"]).describe(
+          'Zoom direction. "forward"/"in" = zoom closer, "backward"/"out" = zoom farther.'
+        ),
+        amount: external_exports.number().min(0.1).max(20).default(1).describe(
+          "Zoom intensity (0.1-20, default 1). Higher values zoom more aggressively per step."
+        )
+      }),
+      execute: /* @__PURE__ */ __name(async ({ direction, amount }) => {
+        try {
+          const resultJson = await manipulateSceneViewPromise("zoom", direction, amount);
+          const result = JSON.parse(resultJson);
+          if (!result.success) {
+            return `Zoom failed: ${result.error || "Unknown error"}`;
+          }
+          return result.description || `Zoomed ${direction} successfully.`;
+        } catch (error48) {
+          return `Zoom failed: ${error48.message || error48}`;
+        }
+      }, "execute")
+    }),
+    /**
+     * Pan the Scene view camera up/down/left/right (like middle-mouse drag).
+     */
+    sceneViewPan: tool({
+      description: "Pan (translate) the Unity Scene view camera up, down, left, or right (Editor only). This is equivalent to holding the middle mouse button and dragging in the Scene view. The camera pivot point moves in the specified direction relative to the current camera orientation. The amount controls how far to pan (1 = normal step, scaled to current zoom level). Use this before captureSceneView to center a specific object in the view.",
+      inputSchema: external_exports.object({
+        direction: external_exports.enum(["up", "down", "left", "right"]).describe(
+          "Pan direction relative to the current camera view."
+        ),
+        amount: external_exports.number().min(0.1).max(50).default(1).describe(
+          "Pan distance multiplier (0.1-50, default 1). Automatically scaled by current zoom level for consistent feel."
+        )
+      }),
+      execute: /* @__PURE__ */ __name(async ({ direction, amount }) => {
+        try {
+          const resultJson = await manipulateSceneViewPromise("pan", direction, amount);
+          const result = JSON.parse(resultJson);
+          if (!result.success) {
+            return `Pan failed: ${result.error || "Unknown error"}`;
+          }
+          return result.description || `Panned ${direction} successfully.`;
+        } catch (error48) {
+          return `Pan failed: ${error48.message || error48}`;
+        }
+      }, "execute")
+    }),
+    /**
+     * Orbit (rotate) the Scene view camera around the pivot point (like right-mouse drag).
+     */
+    sceneViewOrbit: tool({
+      description: 'Orbit (rotate) the Unity Scene view camera around its pivot point (Editor only). This is equivalent to holding the right mouse button and dragging in the Scene view. "up"/"down" rotates the camera pitch (looking up/down), "left"/"right" rotates the camera yaw (looking left/right). The amount controls rotation intensity (1 = ~15 degrees). Use this before captureSceneView to view objects from different angles.',
+      inputSchema: external_exports.object({
+        direction: external_exports.enum(["up", "down", "left", "right"]).describe(
+          'Orbit direction. "up"/"down" = pitch, "left"/"right" = yaw.'
+        ),
+        amount: external_exports.number().min(0.1).max(24).default(1).describe(
+          "Orbit intensity (0.1-24, default 1). Each unit is approximately 15 degrees of rotation."
+        )
+      }),
+      execute: /* @__PURE__ */ __name(async ({ direction, amount }) => {
+        try {
+          const resultJson = await manipulateSceneViewPromise("orbit", direction, amount);
+          const result = JSON.parse(resultJson);
+          if (!result.success) {
+            return `Orbit failed: ${result.error || "Unknown error"}`;
+          }
+          return result.description || `Orbited ${direction} successfully.`;
+        } catch (error48) {
+          return `Orbit failed: ${error48.message || error48}`;
+        }
+      }, "execute")
+    })
+  };
+}
+__name(createSceneViewNavigationTools, "createSceneViewNavigationTools");
+function manipulateSceneViewPromise(operation, direction, amount) {
+  return new Promise((resolve2, reject) => {
+    try {
+      CS.LLMAgent.ScreenCaptureBridge.ManipulateSceneView(
+        operation,
+        direction,
+        amount,
+        (resultJson) => {
+          resolve2(resultJson);
+        }
+      );
+    } catch (error48) {
+      reject(error48);
+    }
+  });
+}
+__name(manipulateSceneViewPromise, "manipulateSceneViewPromise");
 
 // src/tools/type-reflection-tool.mts
 function createTypeReflectionTools() {
@@ -39088,39 +39190,61 @@ function createTypeReflectionTools() {
 __name(createTypeReflectionTools, "createTypeReflectionTools");
 
 // src/tools/eval-tool.mts
+var jsEnv = null;
 function createEvalTools() {
   return {
     /**
      * Evaluate JavaScript code in the PuerTS runtime environment.
      */
     evalJsCode: tool({
-      description: "Execute JavaScript code in the PuerTS runtime environment. The code runs inside Unity via PuerTS, so it has full access to:\n- The `CS` global object for calling any C# / Unity API (e.g. CS.UnityEngine.GameObject, CS.UnityEngine.Debug.Log)\n- The `puer` global object for PuerTS helpers ($ref, $unref, $generic, $typeof, $promise)\n- Standard JS/TS features\n\nUse this tool when you need to:\n- Inspect or modify Unity scene objects at runtime\n- Create/destroy GameObjects or Components\n- Query transform hierarchies, component states, etc.\n- Execute any Unity API call dynamically\n- Test code snippets in the live Unity environment\n\nThe code is evaluated via eval(). The return value of the last expression will be captured as the result. Use console.log() for debug output (it goes to Unity console). Wrap async operations with await if needed (the eval is wrapped in an async context).\n\nIMPORTANT: Follow PuerTS interop rules. For example:\n- Use CS.UnityEngine.Vector3.op_Addition(a, b) instead of a + b for operator overloading\n- Use puer.$typeof(CS.SomeType) instead of typeof for C# types\n- Use puer.$generic() for generic types\n- Use puer.$ref() / puer.$unref() for out/ref parameters",
+      description: 'Execute JavaScript code in a dedicated PuerTS runtime environment. This VM is separate from the main agent VM but is **reused across calls** \u2014 variables, functions, and state defined in previous calls persist and can be referenced in later calls.\n\nThe code runs inside Unity via PuerTS with full access to the `CS` and `puer` globals (see PuerTS interop rules in the system prompt).\n\nUse this tool when you need to inspect or modify Unity scene objects, create/destroy GameObjects or Components, query hierarchies, execute Unity API calls dynamically, or test code snippets in the live environment.\n\nThe code is wrapped in an async context, so you can use `await`. Use `return <value>` to pass a result back \u2014 the returned value will appear in the `result` field of the response. If no `return` statement is used, `result` will be "(no return value)". Objects are serialized via JSON.stringify; primitives are converted to strings.\n\nOn success the response is `{ success: true, result: string }`. On failure the response is `{ success: false, error: string, stack: string }`.\n\nUse console.log() for debug output (it goes to the Unity console).',
       inputSchema: external_exports.object({
         code: external_exports.string().describe(
-          `The JavaScript code to execute. Can include multiple statements. The result of the last expression is returned. Example: "const go = CS.UnityEngine.GameObject.Find('Main Camera'); go.transform.position.toString()"`
+          "The JavaScript code to execute. Can include multiple statements. Use `return <expr>` to send a value back as the result. Example: \"const go = CS.UnityEngine.GameObject.Find('Main Camera'); return go.transform.position.toString()\""
         )
       }),
       execute: /* @__PURE__ */ __name(async ({ code }) => {
         try {
-          const wrappedCode = `(async () => { ${code} })()`;
-          const result = await eval(wrappedCode);
-          let resultStr;
-          if (result === void 0) {
-            resultStr = "(no return value)";
-          } else if (result === null) {
-            resultStr = "null";
-          } else if (typeof result === "object") {
-            try {
-              resultStr = JSON.stringify(result, null, 2);
-            } catch {
-              resultStr = String(result);
-            }
-          } else {
+          if (!jsEnv) {
+            jsEnv = CS.LLMAgent.ScriptEnvBridge.CreateJavaScriptEnv();
+          }
+          const wrappedCode = `(function(onFinish) {
+    (async () => {
+        try {
+            ${code}
+        } catch(e) {
+            onFinish.Invoke(JSON.stringify({ __error: true, message: String(e.message || e), stack: String(e.stack || '') }));
+        }
+    })().then(function(result) {
+        var resultStr;
+        if (result === undefined) {
+            resultStr = '(no return value)';
+        } else if (result === null) {
+            resultStr = 'null';
+        } else if (typeof result === 'object') {
+            try { resultStr = JSON.stringify(result, null, 2); } catch(e) { resultStr = String(result); }
+        } else {
             resultStr = String(result);
+        }
+        onFinish.Invoke(JSON.stringify({ __error: false, result: resultStr }));
+    }).catch(function(err) {
+        onFinish.Invoke(JSON.stringify({ __error: true, message: String(err.message || err), stack: String(err.stack || '') }));
+    });
+})`;
+          const resultJson = await new Promise((resolve2) => {
+            CS.LLMAgent.ScriptEnvBridge.Eval(jsEnv, wrappedCode, resolve2);
+          });
+          const parsed = JSON.parse(resultJson);
+          if (parsed.__error) {
+            return {
+              success: false,
+              error: parsed.message,
+              stack: parsed.stack || ""
+            };
           }
           return {
             success: true,
-            result: resultStr
+            result: parsed.result
           };
         } catch (error48) {
           const errorMsg = error48.message || String(error48);
@@ -39140,11 +39264,11 @@ __name(createEvalTools, "createEvalTools");
 // src/agent/agent-core.mts
 function randomSuffix(len = 5) {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let result2 = "";
+  let result = "";
   for (let i2 = 0; i2 < len; i2++) {
-    result2 += chars[Math.floor(Math.random() * chars.length)];
+    result += chars[Math.floor(Math.random() * chars.length)];
   }
-  return result2;
+  return result;
 }
 __name(randomSuffix, "randomSuffix");
 var BigStringStore = class {
@@ -39379,17 +39503,17 @@ __name(compressMessage, "compressMessage");
 function compressMessages(messages, skipTail = 0) {
   const end = messages.length - skipTail;
   let replaced = 0;
-  const result2 = new Array(messages.length);
+  const result = new Array(messages.length);
   const storeSizeBefore = bigStringStore.size;
   for (let i2 = 0; i2 < messages.length; i2++) {
     if (i2 < end) {
-      result2[i2] = compressMessage(messages[i2]);
+      result[i2] = compressMessage(messages[i2]);
     } else {
-      result2[i2] = messages[i2];
+      result[i2] = messages[i2];
     }
   }
   replaced = bigStringStore.size - storeSizeBefore;
-  return { messages: result2, replaced };
+  return { messages: result, replaced };
 }
 __name(compressMessages, "compressMessages");
 var compressedUpToIndex = 0;
@@ -39456,13 +39580,13 @@ async function summarizeMessages(messages) {
     if (conversationText.length > 2e4) {
       conversationText = conversationText.substring(0, 2e4) + "\n... (further content omitted)";
     }
-    const result2 = await generateText({
+    const result = await generateText({
       model,
       system: `You are a concise summarizer. Summarize the following conversation history into a brief paragraph. Focus on: what the user wanted to accomplish, what actions were taken (tools called, code executed), key results or errors encountered, and the current state. Keep the summary under ${SUMMARY_MAX_CHARS} characters. Do NOT include code blocks. Write in the same language the user used.`,
       prompt: conversationText,
       maxRetries: 1
     });
-    const summary = result2.text?.trim();
+    const summary = result.text?.trim();
     if (summary && summary.length > 0) {
       console.log(`[Agent] Generated history summary (${summary.length} chars)`);
       return summary;
@@ -39506,8 +39630,8 @@ ${summary}`
       };
     }
   }
-  const result2 = summaryMsg ? [summaryMsg, ...keptMessages] : keptMessages;
-  return { messages: result2, trimmed: true };
+  const result = summaryMsg ? [summaryMsg, ...keptMessages] : keptMessages;
+  return { messages: result, trimmed: true };
 }
 __name(trimMessagesByTokenBudget, "trimMessagesByTokenBudget");
 function createRetrieveBigStringTool() {
@@ -39518,8 +39642,8 @@ function createRetrieveBigStringTool() {
         index: external_exports.number().int().min(0).describe('The index from the placeholder, e.g. for bigstr_xxxxx(3, 1200, "code"), index is 3.')
       }),
       execute: /* @__PURE__ */ __name(async ({ index }) => {
-        const result2 = bigStringStore.retrieve(index);
-        if (!result2) {
+        const result = bigStringStore.retrieve(index);
+        if (!result) {
           const meta3 = bigStringStore.getMeta(index);
           if (meta3?.nonRetrievable) {
             return {
@@ -39534,8 +39658,8 @@ function createRetrieveBigStringTool() {
         }
         return {
           success: true,
-          contentType: result2.contentType,
-          content: result2.content
+          contentType: result.contentType,
+          content: result.content
         };
       }, "execute")
     })
@@ -39608,11 +39732,12 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
     const tools = {
       ...createUnityLogTools(),
       ...createScreenshotTools(),
+      ...createSceneViewNavigationTools(),
       ...createTypeReflectionTools(),
       ...createEvalTools(),
       ...createRetrieveBigStringTool()
     };
-    const result2 = await generateText({
+    const result = await generateText({
       model,
       system: buildSystemPrompt(),
       messages: conversationHistory,
@@ -39712,15 +39837,15 @@ ${historySummary}`
         return { messages: newMessages };
       }
     });
-    for (const msg of result2.response.messages) {
+    for (const msg of result.response.messages) {
       conversationHistory.push(msg);
     }
-    if (result2.steps.length >= MAX_STEPS) {
-      const partialText = result2.text || "";
+    if (result.steps.length >= MAX_STEPS) {
+      const partialText = result.text || "";
       console.log(`[Agent] Reached max steps (${MAX_STEPS}). Pausing for user confirmation.`);
       return `${STEP_LIMIT_PREFIX}${partialText}`;
     }
-    return result2.text;
+    return result.text;
   } catch (error48) {
     const errorMsg = `[Agent] Error: ${error48.message || String(error48)}`;
     console.error(errorMsg);
@@ -39762,11 +39887,12 @@ async function continueGeneration() {
     const tools = {
       ...createUnityLogTools(),
       ...createScreenshotTools(),
+      ...createSceneViewNavigationTools(),
       ...createTypeReflectionTools(),
       ...createEvalTools(),
       ...createRetrieveBigStringTool()
     };
-    const result2 = await generateText({
+    const result = await generateText({
       model,
       system: buildSystemPrompt(),
       messages: conversationHistory,
@@ -39854,15 +39980,15 @@ ${historySummary}`
         return { messages: newMessages };
       }
     });
-    for (const msg of result2.response.messages) {
+    for (const msg of result.response.messages) {
       conversationHistory.push(msg);
     }
-    if (result2.steps.length >= MAX_STEPS) {
-      const partialText = result2.text || "";
+    if (result.steps.length >= MAX_STEPS) {
+      const partialText = result.text || "";
       console.log(`[Agent] Reached max steps again (${MAX_STEPS}). Pausing for user confirmation.`);
       return `${STEP_LIMIT_PREFIX}${partialText}`;
     }
-    return result2.text;
+    return result.text;
   } catch (error48) {
     const errorMsg = `[Agent] Error: ${error48.message || String(error48)}`;
     console.error(errorMsg);

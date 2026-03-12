@@ -26,6 +26,7 @@ namespace LLMAgent.Editor
                     typeof(LLMAgent.UnityLogBridge),
                     typeof(LLMAgent.ScreenCaptureBridge),
                     typeof(LLMAgent.TypeReflectionBridge),
+                    typeof(LLMAgent.ScriptEnvBridge),
                     typeof(Action<string, bool>),
                     typeof(Action<string>),
                     typeof(Func<string, bool>),
