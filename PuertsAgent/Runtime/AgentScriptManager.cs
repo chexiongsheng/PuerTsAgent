@@ -23,6 +23,7 @@ namespace LLMAgent
         // TS function delegates
         private Func<string, string, string, string> configureAgent;
         private Action<string, string, string, Action<string, bool>> onMessageReceived;
+        private Action<Action<string, bool>> onContinueGeneration;
         private Func<string, string> onMessageSync;
         private Action onClearHistory;
         private Func<int> onGetHistoryLength;
@@ -75,6 +76,7 @@ namespace LLMAgent
                 // Get exported functions from TS module
                 configureAgent = moduleExports.Get<Func<string, string, string, string>>("configureAgent");
                 onMessageReceived = moduleExports.Get<Action<string, string, string, Action<string, bool>>>("onMessageReceived");
+                onContinueGeneration = moduleExports.Get<Action<Action<string, bool>>>("onContinueGeneration");
                 onMessageSync = moduleExports.Get<Func<string, string>>("onMessageSync");
                 onClearHistory = moduleExports.Get<Action>("onClearHistory");
                 onGetHistoryLength = moduleExports.Get<Func<int>>("onGetHistoryLength");
@@ -231,6 +233,32 @@ namespace LLMAgent
         }
 
         /// <summary>
+        /// Continue generation after the step limit was reached.
+        /// </summary>
+        public void ContinueGenerationAsync(Action<string, bool> onResponse)
+        {
+            if (!isInitialized || onContinueGeneration == null)
+            {
+                onResponse?.Invoke("[AgentScriptManager] Not initialized. Cannot continue generation.", true);
+                return;
+            }
+
+            try
+            {
+                onContinueGeneration((response, isError) =>
+                {
+                    onResponse?.Invoke(response, isError);
+                });
+            }
+            catch (Exception ex)
+            {
+                string err = $"[AgentScriptManager] Error continuing generation: {ex.Message}";
+                Debug.LogError(err);
+                onResponse?.Invoke(err, true);
+            }
+        }
+
+        /// <summary>
         /// Check if the agent is configured.
         /// </summary>
         public bool IsAgentConfigured()
@@ -293,6 +321,7 @@ namespace LLMAgent
 
             configureAgent = null;
             onMessageReceived = null;
+            onContinueGeneration = null;
             onMessageSync = null;
             onClearHistory = null;
             onGetHistoryLength = null;

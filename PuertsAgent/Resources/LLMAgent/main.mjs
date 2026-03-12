@@ -39133,6 +39133,8 @@ var ENABLE_SLIDING_WINDOW = true;
 var CHARS_PER_TOKEN = 4;
 var MAX_INPUT_TOKENS = 6e5;
 var MIN_KEEP_MESSAGES = 6;
+var MAX_STEPS = 25;
+var STEP_LIMIT_PREFIX = "[STEP_LIMIT_REACHED]";
 var SUMMARY_MAX_CHARS = 2e3;
 var SYSTEM_PROMPT = `You are a helpful AI assistant running inside Unity via PuerTS (a TypeScript/JavaScript runtime for Unity). You can help with game development, scripting, and general questions. Be concise and practical.
 
@@ -39544,7 +39546,7 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
       system: buildSystemPrompt(),
       messages: conversationHistory,
       tools,
-      stopWhen: stepCountIs(25),
+      stopWhen: stepCountIs(MAX_STEPS),
       prepareStep({ messages, stepNumber, steps }) {
         if (stepNumber === 0) return void 0;
         const { messages: compressed, replaced } = compressMessages(messages, 2);
@@ -39642,6 +39644,11 @@ ${historySummary}`
     for (const msg of result2.response.messages) {
       conversationHistory.push(msg);
     }
+    if (result2.steps.length >= MAX_STEPS) {
+      const partialText = result2.text || "";
+      console.log(`[Agent] Reached max steps (${MAX_STEPS}). Pausing for user confirmation.`);
+      return `${STEP_LIMIT_PREFIX}${partialText}`;
+    }
     return result2.text;
   } catch (error48) {
     const errorMsg = `[Agent] Error: ${error48.message || String(error48)}`;
@@ -39651,6 +39658,148 @@ ${historySummary}`
   }
 }
 __name(sendMessage, "sendMessage");
+async function continueGeneration() {
+  if (!isConfigured || !currentConfig.apiKey) {
+    return "[Agent] Not configured. Please set API key first via the Settings panel.";
+  }
+  console.log("[Agent] Continuing generation from where it left off...");
+  compressHistoryMessages();
+  if (ENABLE_SLIDING_WINDOW) {
+    const estimated = estimateTokens(conversationHistory);
+    if (estimated > MAX_INPUT_TOKENS) {
+      const { messages: trimmed, trimmed: didTrim } = await trimMessagesByTokenBudget(
+        conversationHistory,
+        MAX_INPUT_TOKENS,
+        true
+      );
+      if (didTrim) {
+        conversationHistory = trimmed;
+        compressedUpToIndex = conversationHistory.length;
+      }
+    }
+  }
+  conversationHistory.push({
+    role: "user",
+    content: "Please continue. Pick up from where you left off and keep working on the task."
+  });
+  try {
+    const provider = createOpenAI({
+      apiKey: currentConfig.apiKey,
+      baseURL: currentConfig.baseURL
+    });
+    const model = provider.chat(currentConfig.model || "gpt-4o-mini");
+    const tools = {
+      ...createUnityLogTools(),
+      ...createScreenshotTools(),
+      ...createTypeReflectionTools(),
+      ...createEvalTools(),
+      ...createRetrieveBigStringTool()
+    };
+    const result2 = await generateText({
+      model,
+      system: buildSystemPrompt(),
+      messages: conversationHistory,
+      tools,
+      stopWhen: stepCountIs(MAX_STEPS),
+      prepareStep({ messages, stepNumber, steps }) {
+        if (stepNumber === 0) return void 0;
+        const { messages: compressed, replaced } = compressMessages(messages, 2);
+        let newMessages = replaced > 0 ? compressed : [...messages];
+        if (replaced > 0) {
+          console.log(`[Agent] continueGeneration prepareStep(${stepNumber}): compressed ${replaced} big strings`);
+        }
+        if (ENABLE_SLIDING_WINDOW) {
+          const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
+          const lastInputTokens = lastStep?.usage?.inputTokens;
+          if (lastInputTokens && lastInputTokens > MAX_INPUT_TOKENS) {
+            const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
+            const trimmedMsgs = newMessages.slice(newMessages.length - keep);
+            if (historySummary) {
+              trimmedMsgs.unshift({
+                role: "user",
+                content: `[Context Summary]:
+${historySummary}`
+              });
+            }
+            newMessages = trimmedMsgs;
+          } else {
+            const estimatedTokens = estimateTokens(newMessages);
+            if (estimatedTokens > MAX_INPUT_TOKENS) {
+              const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
+              const trimmedMsgs = newMessages.slice(newMessages.length - keep);
+              if (historySummary) {
+                trimmedMsgs.unshift({
+                  role: "user",
+                  content: `[Context Summary]:
+${historySummary}`
+                });
+              }
+              newMessages = trimmedMsgs;
+            }
+          }
+        }
+        const lastMsg = newMessages[newMessages.length - 1];
+        if (!lastMsg || lastMsg.role !== "tool") {
+          return replaced > 0 ? { messages: newMessages } : void 0;
+        }
+        const imageParts = [];
+        const patchedContent = [];
+        for (const part of lastMsg.content) {
+          if (part.type === "tool-result" && part.output?.type === "content" && Array.isArray(part.output.value)) {
+            const textItems = [];
+            for (const item of part.output.value) {
+              if (item.type === "file-data" && item.mediaType?.startsWith("image/")) {
+                imageParts.push({
+                  type: "image",
+                  image: item.data,
+                  mediaType: item.mediaType
+                });
+              } else {
+                textItems.push(item);
+              }
+            }
+            if (imageParts.length > 0) {
+              patchedContent.push({
+                ...part,
+                output: textItems.length > 0 ? { type: "content", value: textItems } : { type: "text", value: textItems.map((t2) => t2.text || "").join("\n") || "Screenshot captured." }
+              });
+            } else {
+              patchedContent.push(part);
+            }
+          } else {
+            patchedContent.push(part);
+          }
+        }
+        if (imageParts.length > 0) {
+          newMessages[newMessages.length - 1] = { role: "tool", content: patchedContent };
+          newMessages.push({
+            role: "user",
+            content: [
+              ...imageParts,
+              { type: "text", text: "Above is the screenshot I just captured. Please analyze it and respond to my earlier request." }
+            ]
+          });
+        }
+        return { messages: newMessages };
+      }
+    });
+    for (const msg of result2.response.messages) {
+      conversationHistory.push(msg);
+    }
+    if (result2.steps.length >= MAX_STEPS) {
+      const partialText = result2.text || "";
+      console.log(`[Agent] Reached max steps again (${MAX_STEPS}). Pausing for user confirmation.`);
+      return `${STEP_LIMIT_PREFIX}${partialText}`;
+    }
+    return result2.text;
+  } catch (error48) {
+    const errorMsg = `[Agent] Error: ${error48.message || String(error48)}`;
+    console.error(errorMsg);
+    conversationHistory.pop();
+    return errorMsg;
+  }
+}
+__name(continueGeneration, "continueGeneration");
 function clearHistory() {
   conversationHistory = [];
   compressedUpToIndex = 0;
@@ -39702,6 +39851,21 @@ function onMessageSync(message) {
   return `[Echo] ${message}`;
 }
 __name(onMessageSync, "onMessageSync");
+function onContinueGeneration(callback) {
+  console.log("[Agent] User requested to continue generation.");
+  if (!getIsConfigured()) {
+    callback.Invoke("[Agent] Not configured. Please set your API key in Settings.", false);
+    return;
+  }
+  continueGeneration().then((response) => {
+    callback.Invoke(response, false);
+  }).catch((error48) => {
+    const errorMsg = `[Agent] Error: ${error48.message || String(error48)}`;
+    console.error(errorMsg);
+    callback.Invoke(errorMsg, true);
+  });
+}
+__name(onContinueGeneration, "onContinueGeneration");
 function onClearHistory() {
   clearHistory();
 }
@@ -39717,6 +39881,7 @@ __name(onIsConfigured, "onIsConfigured");
 export {
   configureAgent,
   onClearHistory,
+  onContinueGeneration,
   onGetHistoryLength,
   onIsConfigured,
   onMessageReceived,

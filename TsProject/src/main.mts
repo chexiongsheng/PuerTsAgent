@@ -11,6 +11,7 @@ import './polyfills/fetch-polyfill.mjs';
 import {
     configure,
     sendMessage,
+    continueGeneration,
     clearHistory,
     getHistoryLength,
     getIsConfigured,
@@ -74,6 +75,29 @@ export function onMessageSync(message: string): string {
         return '[Agent] Not configured. Please set your API key in Settings.';
     }
     return `[Echo] ${message}`;
+}
+
+/**
+ * Continue generation after hitting the step limit.
+ * C# passes an Action<string, bool> callback, same pattern as onMessageReceived.
+ */
+export function onContinueGeneration(callback: CS.System.Action$2<string, boolean>): void {
+    console.log('[Agent] User requested to continue generation.');
+
+    if (!getIsConfigured()) {
+        callback.Invoke!('[Agent] Not configured. Please set your API key in Settings.', false);
+        return;
+    }
+
+    continueGeneration()
+        .then((response: string) => {
+            callback.Invoke!(response, false);
+        })
+        .catch((error: any) => {
+            const errorMsg = `[Agent] Error: ${error.message || String(error)}`;
+            console.error(errorMsg);
+            callback.Invoke!(errorMsg, true);
+        });
 }
 
 /**

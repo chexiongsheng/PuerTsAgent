@@ -80,7 +80,10 @@ namespace LLMAgent.Editor
             public bool IsUser;
             public string Timestamp;
             public string ImagePath; // optional: path to attached image
+            public bool ShowContinueButton; // true when step limit was reached
         }
+
+        private const string STEP_LIMIT_PREFIX = "[STEP_LIMIT_REACHED]";
 
         [MenuItem("Puerts Agent/New Chat Window")]
         public static void ShowWindow()
@@ -721,6 +724,66 @@ namespace LLMAgent.Editor
             Rect bubbleRect = GUILayoutUtility.GetLastRect();
             HandleBubbleInteraction(bubbleRect, msg, msgIndex);
 
+            // "Continue" button when step limit was reached
+            if (msg.ShowContinueButton && !isWaitingForResponse)
+            {
+                GUILayout.Space(4);
+                EditorGUILayout.BeginHorizontal();
+
+                Color originalBg = GUI.backgroundColor;
+                GUI.backgroundColor = EditorGUIUtility.isProSkin
+                    ? new Color(0.3f, 0.6f, 0.9f, 1f)
+                    : new Color(0.2f, 0.5f, 0.85f, 1f);
+
+                GUIStyle continueButtonStyle = new GUIStyle(GUI.skin.button)
+                {
+                    fontStyle = FontStyle.Bold,
+                    fontSize = 12,
+                    padding = new RectOffset(12, 12, 6, 6),
+                    normal = { textColor = Color.white },
+                    hover = { textColor = Color.white }
+                };
+
+                if (GUILayout.Button("\u25B6 Reached max tool calls. Continue?", continueButtonStyle, GUILayout.Height(28)))
+                {
+                    // Remove the continue button by clearing the flag
+                    var updated = messages[msgIndex];
+                    updated.ShowContinueButton = false;
+                    messages[msgIndex] = updated;
+
+                    // Start continuation
+                    isWaitingForResponse = true;
+                    shouldScrollToBottom = true;
+                    Repaint();
+
+                    scriptManager.ContinueGenerationAsync((response, isError) =>
+                    {
+                        isWaitingForResponse = false;
+
+                        bool hitStepLimit = !isError && response != null && response.StartsWith(STEP_LIMIT_PREFIX);
+                        string displayText = hitStepLimit ? response.Substring(STEP_LIMIT_PREFIX.Length) : response;
+
+                        if (hitStepLimit && string.IsNullOrWhiteSpace(displayText))
+                        {
+                            displayText = "(The agent has been working on your request...)";
+                        }
+
+                        messages.Add(new ChatMessage
+                        {
+                            Text = displayText,
+                            IsUser = false,
+                            Timestamp = DateTime.Now.ToString("HH:mm"),
+                            ShowContinueButton = hitStepLimit
+                        });
+                        shouldScrollToBottom = true;
+                        Repaint();
+                    });
+                }
+
+                GUI.backgroundColor = originalBg;
+                EditorGUILayout.EndHorizontal();
+            }
+
             EditorGUILayout.EndVertical();
 
             GUILayout.FlexibleSpace();
@@ -999,11 +1062,22 @@ namespace LLMAgent.Editor
                 scriptManager.SendMessageAsync(text, imagePath, (response, isError) =>
                 {
                     isWaitingForResponse = false;
+
+                    bool hitStepLimit = !isError && response != null && response.StartsWith(STEP_LIMIT_PREFIX);
+                    string displayText = hitStepLimit ? response.Substring(STEP_LIMIT_PREFIX.Length) : response;
+
+                    // If the display text is empty (all steps were tool calls), show an informative message
+                    if (hitStepLimit && string.IsNullOrWhiteSpace(displayText))
+                    {
+                        displayText = "(The agent has been working on your request...)";
+                    }
+
                     messages.Add(new ChatMessage
                     {
-                        Text = response,
+                        Text = displayText,
                         IsUser = false,
-                        Timestamp = DateTime.Now.ToString("HH:mm")
+                        Timestamp = DateTime.Now.ToString("HH:mm"),
+                        ShowContinueButton = hitStepLimit
                     });
                     shouldScrollToBottom = true;
                     Repaint();

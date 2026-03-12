@@ -133,6 +133,18 @@ const MAX_INPUT_TOKENS = 600_000;
 const MIN_KEEP_MESSAGES = 6;
 
 /**
+ * Maximum number of tool-call steps allowed per generateText invocation.
+ * When this limit is reached, the agent pauses and asks the user whether to continue.
+ */
+const MAX_STEPS = 25;
+
+/**
+ * Prefix used to signal the C# UI that the response hit the step limit.
+ * The UI should detect this prefix and show a "Continue" button.
+ */
+const STEP_LIMIT_PREFIX = '[STEP_LIMIT_REACHED]';
+
+/**
  * Character budget for the summary of trimmed messages.
  * The summary prompt instructs the LLM to stay within this limit.
  */
@@ -716,7 +728,7 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
             system: buildSystemPrompt(),
             messages: conversationHistory,
             tools,
-            stopWhen: stepCountIs(25),
+            stopWhen: stepCountIs(MAX_STEPS),
             prepareStep({ messages, stepNumber, steps }) {
                 if (stepNumber === 0) return undefined;
 
@@ -849,6 +861,13 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
             conversationHistory.push(msg as ModelMessage);
         }
 
+        // Check if the step limit was reached
+        if (result.steps.length >= MAX_STEPS) {
+            const partialText = result.text || '';
+            console.log(`[Agent] Reached max steps (${MAX_STEPS}). Pausing for user confirmation.`);
+            return `${STEP_LIMIT_PREFIX}${partialText}`;
+        }
+
         return result.text;
     } catch (error: any) {
         const errorMsg = `[Agent] Error: ${error.message || String(error)}`;
@@ -857,6 +876,176 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
         // Remove the failed user message from history
         conversationHistory.pop();
 
+        return errorMsg;
+    }
+}
+
+/**
+ * Continue generation after the step limit was reached.
+ * Re-invokes generateText with the existing conversationHistory (which already
+ * contains all previous assistant + tool messages) so the agent picks up
+ * where it left off.
+ */
+export async function continueGeneration(): Promise<string> {
+    if (!isConfigured || !currentConfig.apiKey) {
+        return '[Agent] Not configured. Please set API key first via the Settings panel.';
+    }
+
+    console.log('[Agent] Continuing generation from where it left off...');
+
+    // Compress history before continuing
+    compressHistoryMessages();
+
+    // Sliding window trim if needed
+    if (ENABLE_SLIDING_WINDOW) {
+        const estimated = estimateTokens(conversationHistory);
+        if (estimated > MAX_INPUT_TOKENS) {
+            const { messages: trimmed, trimmed: didTrim } = await trimMessagesByTokenBudget(
+                conversationHistory, MAX_INPUT_TOKENS, true
+            );
+            if (didTrim) {
+                conversationHistory = trimmed as ModelMessage[];
+                compressedUpToIndex = conversationHistory.length;
+            }
+        }
+    }
+
+    // Add a brief user message to prompt the model to continue
+    conversationHistory.push({
+        role: 'user',
+        content: 'Please continue. Pick up from where you left off and keep working on the task.',
+    });
+
+    try {
+        const provider = createOpenAI({
+            apiKey: currentConfig.apiKey,
+            baseURL: currentConfig.baseURL,
+        });
+        const model = provider.chat(currentConfig.model || 'gpt-4o-mini');
+        const tools = {
+            ...createUnityLogTools(),
+            ...createScreenshotTools(),
+            ...createTypeReflectionTools(),
+            ...createEvalTools(),
+            ...createRetrieveBigStringTool(),
+        };
+
+        const result = await generateText({
+            model,
+            system: buildSystemPrompt(),
+            messages: conversationHistory,
+            tools,
+            stopWhen: stepCountIs(MAX_STEPS),
+            prepareStep({ messages, stepNumber, steps }) {
+                if (stepNumber === 0) return undefined;
+
+                const { messages: compressed, replaced } = compressMessages(messages, 2);
+                let newMessages = replaced > 0 ? compressed : [...messages];
+                if (replaced > 0) {
+                    console.log(`[Agent] continueGeneration prepareStep(${stepNumber}): compressed ${replaced} big strings`);
+                }
+
+                if (ENABLE_SLIDING_WINDOW) {
+                    const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
+                    const lastInputTokens = lastStep?.usage?.inputTokens;
+                    if (lastInputTokens && lastInputTokens > MAX_INPUT_TOKENS) {
+                        const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
+                        const trimmedMsgs = newMessages.slice(newMessages.length - keep);
+                        if (historySummary) {
+                            trimmedMsgs.unshift({
+                                role: 'user' as const,
+                                content: `[Context Summary]:\n${historySummary}`,
+                            } as any);
+                        }
+                        newMessages = trimmedMsgs;
+                    } else {
+                        const estimatedTokens = estimateTokens(newMessages);
+                        if (estimatedTokens > MAX_INPUT_TOKENS) {
+                            const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
+                            const trimmedMsgs = newMessages.slice(newMessages.length - keep);
+                            if (historySummary) {
+                                trimmedMsgs.unshift({
+                                    role: 'user' as const,
+                                    content: `[Context Summary]:\n${historySummary}`,
+                                } as any);
+                            }
+                            newMessages = trimmedMsgs;
+                        }
+                    }
+                }
+
+                // Screenshot image extraction (same logic as sendMessage)
+                const lastMsg = newMessages[newMessages.length - 1];
+                if (!lastMsg || lastMsg.role !== 'tool') {
+                    return replaced > 0 ? { messages: newMessages } : undefined;
+                }
+
+                const imageParts: Array<any> = [];
+                const patchedContent: any[] = [];
+                for (const part of lastMsg.content as any[]) {
+                    if (
+                        part.type === 'tool-result' &&
+                        part.output?.type === 'content' &&
+                        Array.isArray(part.output.value)
+                    ) {
+                        const textItems: any[] = [];
+                        for (const item of part.output.value) {
+                            if (item.type === 'file-data' && item.mediaType?.startsWith('image/')) {
+                                imageParts.push({
+                                    type: 'image' as const,
+                                    image: item.data,
+                                    mediaType: item.mediaType,
+                                });
+                            } else {
+                                textItems.push(item);
+                            }
+                        }
+                        if (imageParts.length > 0) {
+                            patchedContent.push({
+                                ...part,
+                                output: textItems.length > 0
+                                    ? { type: 'content' as const, value: textItems }
+                                    : { type: 'text' as const, value: textItems.map((t: any) => t.text || '').join('\n') || 'Screenshot captured.' },
+                            });
+                        } else {
+                            patchedContent.push(part);
+                        }
+                    } else {
+                        patchedContent.push(part);
+                    }
+                }
+
+                if (imageParts.length > 0) {
+                    newMessages[newMessages.length - 1] = { role: 'tool', content: patchedContent } as any;
+                    newMessages.push({
+                        role: 'user',
+                        content: [
+                            ...imageParts,
+                            { type: 'text' as const, text: 'Above is the screenshot I just captured. Please analyze it and respond to my earlier request.' },
+                        ],
+                    } as any);
+                }
+
+                return { messages: newMessages };
+            },
+        });
+
+        for (const msg of result.response.messages) {
+            conversationHistory.push(msg as ModelMessage);
+        }
+
+        if (result.steps.length >= MAX_STEPS) {
+            const partialText = result.text || '';
+            console.log(`[Agent] Reached max steps again (${MAX_STEPS}). Pausing for user confirmation.`);
+            return `${STEP_LIMIT_PREFIX}${partialText}`;
+        }
+
+        return result.text;
+    } catch (error: any) {
+        const errorMsg = `[Agent] Error: ${error.message || String(error)}`;
+        console.error(errorMsg);
+        // Remove the "continue" user message on failure
+        conversationHistory.pop();
         return errorMsg;
     }
 }
