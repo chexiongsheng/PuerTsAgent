@@ -64,6 +64,12 @@ namespace LLMAgent.Editor
         private Texture2D sendBtnNormalTex;
         private Texture2D sendBtnHoverTex;
         private Texture2D inputFieldBgTex;
+        private Texture2D copyBtnNormalTex;
+        private Texture2D copyBtnHoverTex;
+
+        // Copy feedback state
+        private int copiedMessageIndex = -1;
+        private double copiedMessageTime;
 
         /// <summary>
         /// Represents a single chat message.
@@ -76,10 +82,10 @@ namespace LLMAgent.Editor
             public string ImagePath; // optional: path to attached image
         }
 
-        [MenuItem("LLM Agent/Chat Window")]
+        [MenuItem("Puerts Agent/New Chat Window")]
         public static void ShowWindow()
         {
-            var window = GetWindow<AgentChatWindow>("LLM Agent Chat");
+            var window = GetWindow<AgentChatWindow>("Puerts Agent Chat");
             window.minSize = new Vector2(450, 350);
             window.Show();
         }
@@ -351,6 +357,12 @@ namespace LLMAgent.Editor
                 padding = new RectOffset(6, 6, 4, 4)
             };
 
+            // Copy button textures
+            Color copyBtnNormalColor = isDark ? new Color(0.35f, 0.38f, 0.45f, 0.85f) : new Color(0.70f, 0.72f, 0.78f, 0.85f);
+            Color copyBtnHoverColor = isDark ? new Color(0.45f, 0.50f, 0.60f, 0.95f) : new Color(0.55f, 0.58f, 0.65f, 0.95f);
+            copyBtnNormalTex = MakeRoundedTex(16, 16, copyBtnNormalColor, 3);
+            copyBtnHoverTex = MakeRoundedTex(16, 16, copyBtnHoverColor, 3);
+
             stylesInitialized = true;
         }
 
@@ -409,7 +421,7 @@ namespace LLMAgent.Editor
             GUILayout.Label(agentIcon, iconStyle, GUILayout.Width(24), GUILayout.Height(42));
 
             // Title
-            GUILayout.Label("LLM Agent", headerStyle, GUILayout.Height(42));
+            GUILayout.Label("Puerts Agent", headerStyle, GUILayout.Height(42));
 
             GUILayout.FlexibleSpace();
 
@@ -583,9 +595,9 @@ namespace LLMAgent.Editor
             }
             else
             {
-                foreach (var msg in messages)
+                for (int i = 0; i < messages.Count; i++)
                 {
-                    DrawMessage(msg);
+                    DrawMessage(messages[i], i);
                     GUILayout.Space(4);
                 }
             }
@@ -618,7 +630,7 @@ namespace LLMAgent.Editor
             GUILayout.Label("\U0001F916", emojiStyle, GUILayout.ExpandWidth(true), GUILayout.Height(50));
 
             GUILayout.Space(8);
-            GUILayout.Label("Welcome to LLM Agent", welcomeStyle, GUILayout.ExpandWidth(true));
+            GUILayout.Label("Welcome to Puerts Agent", welcomeStyle, GUILayout.ExpandWidth(true));
             GUILayout.Space(4);
 
             bool isConfigured = scriptManager != null && scriptManager.IsInitialized && scriptManager.IsAgentConfigured();
@@ -633,19 +645,19 @@ namespace LLMAgent.Editor
             GUILayout.FlexibleSpace();
         }
 
-        private void DrawMessage(ChatMessage msg)
+        private void DrawMessage(ChatMessage msg, int msgIndex)
         {
             if (msg.IsUser)
             {
-                DrawUserMessage(msg);
+                DrawUserMessage(msg, msgIndex);
             }
             else
             {
-                DrawAgentMessage(msg);
+                DrawAgentMessage(msg, msgIndex);
             }
         }
 
-        private void DrawUserMessage(ChatMessage msg)
+        private void DrawUserMessage(ChatMessage msg, int msgIndex)
         {
             EditorGUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
@@ -670,13 +682,17 @@ namespace LLMAgent.Editor
             GUILayout.Label(msg.Text, userLabelStyle);
             EditorGUILayout.EndVertical();
 
+            // Get the bubble rect for hover/right-click detection
+            Rect bubbleRect = GUILayoutUtility.GetLastRect();
+            HandleBubbleInteraction(bubbleRect, msg, msgIndex);
+
             EditorGUILayout.EndVertical();
 
             GUILayout.Space(4);
             EditorGUILayout.EndHorizontal();
         }
 
-        private void DrawAgentMessage(ChatMessage msg)
+        private void DrawAgentMessage(ChatMessage msg, int msgIndex)
         {
             EditorGUILayout.BeginHorizontal();
             GUILayout.Space(4);
@@ -701,10 +717,113 @@ namespace LLMAgent.Editor
             GUILayout.Label(msg.Text, agentLabelStyle);
             EditorGUILayout.EndVertical();
 
+            // Get the bubble rect for hover/right-click detection
+            Rect bubbleRect = GUILayoutUtility.GetLastRect();
+            HandleBubbleInteraction(bubbleRect, msg, msgIndex);
+
             EditorGUILayout.EndVertical();
 
             GUILayout.FlexibleSpace();
             EditorGUILayout.EndHorizontal();
+        }
+
+        /// <summary>
+        /// Handle hover copy button and right-click context menu on a message bubble.
+        /// </summary>
+        private void HandleBubbleInteraction(Rect bubbleRect, ChatMessage msg, int msgIndex)
+        {
+            Event evt = Event.current;
+            bool isHovering = bubbleRect.Contains(evt.mousePosition);
+
+            // Right-click context menu
+            if (isHovering && evt.type == EventType.ContextClick)
+            {
+                GenericMenu menu = new GenericMenu();
+                string textToCopy = msg.Text;
+                menu.AddItem(new GUIContent("Copy Message"), false, () =>
+                {
+                    EditorGUIUtility.systemCopyBuffer = textToCopy;
+                    copiedMessageIndex = msgIndex;
+                    copiedMessageTime = EditorApplication.timeSinceStartup;
+                    Repaint();
+                });
+                menu.ShowAsContext();
+                evt.Use();
+            }
+
+            // Hover copy button (top-right corner of bubble)
+            if (isHovering || (copiedMessageIndex == msgIndex && EditorApplication.timeSinceStartup - copiedMessageTime < 1.5))
+            {
+                bool showCopied = copiedMessageIndex == msgIndex && EditorApplication.timeSinceStartup - copiedMessageTime < 1.5;
+                float btnWidth = showCopied ? 56f : 22f;
+                float btnHeight = 20f;
+                float padding = 4f;
+                Rect btnRect = new Rect(
+                    bubbleRect.xMax - btnWidth - padding,
+                    bubbleRect.yMin + padding,
+                    btnWidth,
+                    btnHeight
+                );
+
+                if (showCopied)
+                {
+                    // Draw "Copied!" feedback
+                    GUIStyle copiedStyle = new GUIStyle(EditorStyles.miniLabel)
+                    {
+                        fontSize = 10,
+                        fontStyle = FontStyle.Bold,
+                        alignment = TextAnchor.MiddleCenter,
+                        normal = { background = copyBtnNormalTex, textColor = new Color(0.3f, 0.9f, 0.4f) },
+                        border = new RectOffset(3, 3, 3, 3),
+                        padding = new RectOffset(4, 4, 2, 2)
+                    };
+                    GUI.Label(btnRect, "\u2713 Copied", copiedStyle);
+                    Repaint(); // Keep repainting to clear the feedback after timeout
+                }
+                else
+                {
+                    // Draw copy button
+                    bool hover = btnRect.Contains(evt.mousePosition);
+                    GUIStyle copyBtnStyle = new GUIStyle()
+                    {
+                        fontSize = 12,
+                        alignment = TextAnchor.MiddleCenter,
+                        normal = { background = hover ? copyBtnHoverTex : copyBtnNormalTex, textColor = Color.white },
+                        border = new RectOffset(3, 3, 3, 3),
+                        padding = new RectOffset(2, 2, 2, 2)
+                    };
+
+                    // Use a clipboard icon from Unity or fallback
+                    GUIContent copyIcon = EditorGUIUtility.IconContent("Clipboard");
+                    if (copyIcon == null || copyIcon.image == null)
+                        copyIcon = EditorGUIUtility.IconContent("d_TreeEditor.Duplicate");
+                    if (copyIcon == null || copyIcon.image == null)
+                        copyIcon = new GUIContent("\u2398"); // copy symbol fallback
+                    copyIcon = copyIcon.image != null
+                        ? new GUIContent(copyIcon.image, "Copy message")
+                        : new GUIContent(copyIcon.text, "Copy message");
+
+                    if (GUI.Button(btnRect, copyIcon, copyBtnStyle))
+                    {
+                        EditorGUIUtility.systemCopyBuffer = msg.Text;
+                        copiedMessageIndex = msgIndex;
+                        copiedMessageTime = EditorApplication.timeSinceStartup;
+                        Repaint();
+                    }
+                }
+
+                // Clear expired feedback
+                if (showCopied && EditorApplication.timeSinceStartup - copiedMessageTime >= 1.5)
+                {
+                    copiedMessageIndex = -1;
+                }
+            }
+
+            // Repaint on hover to show/hide button
+            if (isHovering && evt.type == EventType.Repaint)
+            {
+                Repaint();
+            }
         }
 
         #endregion
@@ -986,6 +1105,8 @@ namespace LLMAgent.Editor
             DestroyTexture(sendBtnHoverTex);
             DestroyTexture(inputFieldBgTex);
             DestroyTexture(settingsBgTex);
+            DestroyTexture(copyBtnNormalTex);
+            DestroyTexture(copyBtnHoverTex);
         }
 
         private void DestroyTexture(Texture2D tex)
