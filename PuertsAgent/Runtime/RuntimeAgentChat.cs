@@ -164,15 +164,29 @@ namespace LLMAgent
             bool canSend = !isWaiting && !string.IsNullOrEmpty(inputText) &&
                            agentManager != null && agentManager.IsInitialized;
 
-            GUI.enabled = canSend;
-            bool sendClicked = GUI.Button(new Rect(innerX + inputW + 5, currentY, sendBtnW, 30), "Send");
-            GUI.enabled = true;
-
-            // Send on button click or Enter key
-            if (canSend && (sendClicked || (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Return)))
+            if (isWaiting)
             {
-                SendMessage(inputText);
-                inputText = "";
+                // Show Stop button during generation
+                if (GUI.Button(new Rect(innerX + inputW + 5, currentY, sendBtnW, 30), "Stop"))
+                {
+                    if (agentManager != null && agentManager.IsInitialized)
+                    {
+                        agentManager.AbortGeneration();
+                    }
+                }
+            }
+            else
+            {
+                GUI.enabled = canSend;
+                bool sendClicked = GUI.Button(new Rect(innerX + inputW + 5, currentY, sendBtnW, 30), "Send");
+                GUI.enabled = true;
+
+                // Send on button click or Enter key
+                if (canSend && (sendClicked || (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Return)))
+                {
+                    SendMessage(inputText);
+                    inputText = "";
+                }
             }
         }
 

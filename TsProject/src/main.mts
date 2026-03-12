@@ -12,6 +12,7 @@ import {
     configure,
     sendMessage,
     continueGeneration,
+    abortGeneration,
     clearHistory,
     getHistoryLength,
     getIsConfigured,
@@ -116,6 +117,14 @@ export function onContinueGeneration(callback: CS.System.Action$2<string, boolea
             console.error(errorMsg);
             callback.Invoke!(errorMsg, true);
         });
+}
+
+/**
+ * Abort the current in-flight generation.
+ * Called from C# side when the user clicks Stop.
+ */
+export function onAbortGeneration(): void {
+    abortGeneration();
 }
 
 /**

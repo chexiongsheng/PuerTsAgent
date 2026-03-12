@@ -95,6 +95,14 @@ class BigStringStore {
 let bigStringStore = new BigStringStore();
 
 /**
+ * AbortController for the current generation.
+ * Created at the start of each runGeneration() call;
+ * calling abortGeneration() triggers the signal so
+ * generateText stops as soon as possible.
+ */
+let currentAbortController: AbortController | null = null;
+
+/**
  * Minimum string length to trigger replacement with a placeholder.
  * Strings shorter than this are kept inline to avoid unnecessary tool calls.
  */
@@ -718,23 +726,30 @@ function createModel() {
 function handleStepFinish(onProgress: ((text: string) => void) | undefined, { stepNumber, text, toolCalls, toolResults, finishReason }: any): void {
     if (!onProgress) return;
 
+    const hasToolResults = toolResults && toolResults.length > 0;
+    const hasToolCalls = toolCalls && toolCalls.length > 0;
+
     let progressText = '';
-    if (toolResults && toolResults.length > 0) {
+    if (hasToolResults) {
         for (const tr of toolResults) {
             const ok = isToolResultSuccess(tr.output);
             if (ok) {
-                progressText += `<color=#4CAF50>[OK]</color> ${tr.toolName}\n`;
+                progressText += `call ${tr.toolName} <color=#4CAF50>[OK]</color>\n`;
             } else {
                 const errMsg = extractToolErrorMessage(tr.output);
-                progressText += `<color=#F44336>[FAIL]</color> ${tr.toolName}: ${errMsg}\n`;
+                progressText += `call ${tr.toolName} <color=#F44336>[FAIL]</color>: ${errMsg}\n`;
             }
         }
-    } else if (toolCalls && toolCalls.length > 0) {
+    } else if (hasToolCalls) {
         for (const tc of toolCalls) {
             progressText += `<color=#FFA726>[CALL]</color> ${tc.toolName}\n`;
         }
     }
-    if (text) {
+
+    // Only include intermediate text when it accompanies tool calls.
+    // If a step is pure text with no tool calls (i.e. the final response),
+    // skip it here — it will be shown via FinalizeProgressBubble's finalText.
+    if (text && (hasToolResults || hasToolCalls)) {
         const truncatedText = text.length > 500 ? text.substring(0, 500) + '...' : text;
         progressText += truncatedText;
     }
@@ -887,6 +902,10 @@ async function prepareHistory(): Promise<void> {
  * @returns The assistant's text response.
  */
 async function runGeneration(onProgress?: (text: string) => void): Promise<string> {
+    // Create a fresh AbortController for this generation
+    currentAbortController = new AbortController();
+    const abortSignal = currentAbortController.signal;
+
     try {
         const model = createModel();
         const tools = createToolSet();
@@ -896,6 +915,7 @@ async function runGeneration(onProgress?: (text: string) => void): Promise<strin
             system: buildSystemPrompt(),
             messages: conversationHistory,
             tools,
+            abortSignal,
             stopWhen: stepCountIs(MAX_STEPS),
             onStepFinish: (stepResult) => handleStepFinish(onProgress, stepResult),
             prepareStep: handlePrepareStep,
@@ -915,6 +935,13 @@ async function runGeneration(onProgress?: (text: string) => void): Promise<strin
 
         return result.text;
     } catch (error: any) {
+        // Check if the error is an abort
+        if (abortSignal.aborted) {
+            console.log('[Agent] Generation was aborted by user.');
+            // Keep the user message in history (don't pop) so context is preserved
+            return '[Agent] Generation stopped by user.';
+        }
+
         const errorMsg = `[Agent] Error: ${error.message || String(error)}`;
         console.error(errorMsg);
 
@@ -922,6 +949,8 @@ async function runGeneration(onProgress?: (text: string) => void): Promise<strin
         conversationHistory.pop();
 
         return errorMsg;
+    } finally {
+        currentAbortController = null;
     }
 }
 
@@ -992,6 +1021,19 @@ export async function continueGeneration(onProgress?: (text: string) => void): P
     });
 
     return runGeneration(onProgress);
+}
+
+/**
+ * Abort the current in-flight generation, if any.
+ * Safe to call even when no generation is running.
+ */
+export function abortGeneration(): void {
+    if (currentAbortController) {
+        console.log('[Agent] Aborting current generation...');
+        currentAbortController.abort();
+    } else {
+        console.log('[Agent] No generation in progress to abort.');
+    }
 }
 
 /**

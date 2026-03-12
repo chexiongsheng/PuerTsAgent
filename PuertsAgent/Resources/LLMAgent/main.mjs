@@ -39323,6 +39323,7 @@ var BigStringStore = class {
   }
 };
 var bigStringStore = new BigStringStore();
+var currentAbortController = null;
 var BIG_STRING_THRESHOLD = 500;
 var ENABLE_SLIDING_WINDOW = true;
 var CHARS_PER_TOKEN = 4;
@@ -39727,26 +39728,28 @@ function createModel() {
 __name(createModel, "createModel");
 function handleStepFinish(onProgress, { stepNumber, text: text2, toolCalls, toolResults, finishReason }) {
   if (!onProgress) return;
+  const hasToolResults = toolResults && toolResults.length > 0;
+  const hasToolCalls = toolCalls && toolCalls.length > 0;
   let progressText = "";
-  if (toolResults && toolResults.length > 0) {
+  if (hasToolResults) {
     for (const tr2 of toolResults) {
       const ok = isToolResultSuccess(tr2.output);
       if (ok) {
-        progressText += `<color=#4CAF50>[OK]</color> ${tr2.toolName}
+        progressText += `call ${tr2.toolName} <color=#4CAF50>[OK]</color>
 `;
       } else {
         const errMsg = extractToolErrorMessage(tr2.output);
-        progressText += `<color=#F44336>[FAIL]</color> ${tr2.toolName}: ${errMsg}
+        progressText += `call ${tr2.toolName} <color=#F44336>[FAIL]</color>: ${errMsg}
 `;
       }
     }
-  } else if (toolCalls && toolCalls.length > 0) {
+  } else if (hasToolCalls) {
     for (const tc of toolCalls) {
       progressText += `<color=#FFA726>[CALL]</color> ${tc.toolName}
 `;
     }
   }
-  if (text2) {
+  if (text2 && (hasToolResults || hasToolCalls)) {
     const truncatedText = text2.length > 500 ? text2.substring(0, 500) + "..." : text2;
     progressText += truncatedText;
   }
@@ -39867,6 +39870,8 @@ async function prepareHistory() {
 }
 __name(prepareHistory, "prepareHistory");
 async function runGeneration(onProgress) {
+  currentAbortController = new AbortController();
+  const abortSignal = currentAbortController.signal;
   try {
     const model = createModel();
     const tools = createToolSet();
@@ -39875,6 +39880,7 @@ async function runGeneration(onProgress) {
       system: buildSystemPrompt(),
       messages: conversationHistory,
       tools,
+      abortSignal,
       stopWhen: stepCountIs(MAX_STEPS),
       onStepFinish: /* @__PURE__ */ __name((stepResult) => handleStepFinish(onProgress, stepResult), "onStepFinish"),
       prepareStep: handlePrepareStep
@@ -39889,10 +39895,16 @@ async function runGeneration(onProgress) {
     }
     return result.text;
   } catch (error48) {
+    if (abortSignal.aborted) {
+      console.log("[Agent] Generation was aborted by user.");
+      return "[Agent] Generation stopped by user.";
+    }
     const errorMsg = `[Agent] Error: ${error48.message || String(error48)}`;
     console.error(errorMsg);
     conversationHistory.pop();
     return errorMsg;
+  } finally {
+    currentAbortController = null;
   }
 }
 __name(runGeneration, "runGeneration");
@@ -39939,6 +39951,15 @@ async function continueGeneration(onProgress) {
   return runGeneration(onProgress);
 }
 __name(continueGeneration, "continueGeneration");
+function abortGeneration() {
+  if (currentAbortController) {
+    console.log("[Agent] Aborting current generation...");
+    currentAbortController.abort();
+  } else {
+    console.log("[Agent] No generation in progress to abort.");
+  }
+}
+__name(abortGeneration, "abortGeneration");
 function clearHistory() {
   conversationHistory = [];
   compressedUpToIndex = 0;
@@ -40019,6 +40040,10 @@ function onContinueGeneration(callback, progressCallback) {
   });
 }
 __name(onContinueGeneration, "onContinueGeneration");
+function onAbortGeneration() {
+  abortGeneration();
+}
+__name(onAbortGeneration, "onAbortGeneration");
 function onClearHistory() {
   clearHistory();
 }
@@ -40033,6 +40058,7 @@ function onIsConfigured() {
 __name(onIsConfigured, "onIsConfigured");
 export {
   configureAgent,
+  onAbortGeneration,
   onClearHistory,
   onContinueGeneration,
   onGetHistoryLength,

@@ -24,6 +24,7 @@ namespace LLMAgent
         private Func<string, string, string, string> configureAgent;
         private Action<string, string, string, Action<string, bool>, Action<string>> onMessageReceived;
         private Action<Action<string, bool>, Action<string>> onContinueGeneration;
+        private Action onAbortGeneration;
         private Func<string, string> onMessageSync;
         private Action onClearHistory;
         private Func<int> onGetHistoryLength;
@@ -77,6 +78,7 @@ namespace LLMAgent
                 configureAgent = moduleExports.Get<Func<string, string, string, string>>("configureAgent");
                 onMessageReceived = moduleExports.Get<Action<string, string, string, Action<string, bool>, Action<string>>>("onMessageReceived");
                 onContinueGeneration = moduleExports.Get<Action<Action<string, bool>, Action<string>>>("onContinueGeneration");
+                onAbortGeneration = moduleExports.Get<Action>("onAbortGeneration");
                 onMessageSync = moduleExports.Get<Func<string, string>>("onMessageSync");
                 onClearHistory = moduleExports.Get<Action>("onClearHistory");
                 onGetHistoryLength = moduleExports.Get<Func<int>>("onGetHistoryLength");
@@ -265,6 +267,25 @@ namespace LLMAgent
         }
 
         /// <summary>
+        /// Abort the current in-flight generation.
+        /// Safe to call even when no generation is running.
+        /// </summary>
+        public void AbortGeneration()
+        {
+            if (!isInitialized || onAbortGeneration == null)
+                return;
+
+            try
+            {
+                onAbortGeneration();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[AgentScriptManager] Error aborting generation: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Check if the agent is configured.
         /// </summary>
         public bool IsAgentConfigured()
@@ -328,6 +349,7 @@ namespace LLMAgent
             configureAgent = null;
             onMessageReceived = null;
             onContinueGeneration = null;
+            onAbortGeneration = null;
             onMessageSync = null;
             onClearHistory = null;
             onGetHistoryLength = null;

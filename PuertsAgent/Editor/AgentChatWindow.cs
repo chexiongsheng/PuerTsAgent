@@ -47,6 +47,7 @@ namespace LLMAgent.Editor
         private GUIStyle timestampStyle;
         private GUIStyle inputFieldStyle;
         private GUIStyle sendButtonStyle;
+        private GUIStyle stopButtonStyle;
         private GUIStyle clearButtonStyle;
         private GUIStyle welcomeStyle;
         private GUIStyle welcomeSubStyle;
@@ -63,6 +64,8 @@ namespace LLMAgent.Editor
         private Texture2D inputAreaBgTex;
         private Texture2D sendBtnNormalTex;
         private Texture2D sendBtnHoverTex;
+        private Texture2D stopBtnNormalTex;
+        private Texture2D stopBtnHoverTex;
         private Texture2D inputFieldBgTex;
         private Texture2D copyBtnNormalTex;
         private Texture2D copyBtnHoverTex;
@@ -215,6 +218,8 @@ namespace LLMAgent.Editor
             Color inputAreaBg = isDark ? new Color(0.18f, 0.18f, 0.22f) : new Color(0.95f, 0.95f, 0.97f);
             Color sendBtnNormal = isDark ? new Color(0.25f, 0.55f, 0.95f) : new Color(0.26f, 0.52f, 0.96f);
             Color sendBtnHover = isDark ? new Color(0.35f, 0.65f, 1.0f) : new Color(0.36f, 0.62f, 1.0f);
+            Color stopBtnNormal = isDark ? new Color(0.85f, 0.30f, 0.25f) : new Color(0.90f, 0.30f, 0.25f);
+            Color stopBtnHover = isDark ? new Color(0.95f, 0.40f, 0.35f) : new Color(1.0f, 0.40f, 0.35f);
             Color inputFieldBg = isDark ? new Color(0.14f, 0.14f, 0.17f) : new Color(1f, 1f, 1f);
 
             // Generate textures
@@ -224,6 +229,8 @@ namespace LLMAgent.Editor
             inputAreaBgTex = MakeTex(4, 4, inputAreaBg);
             sendBtnNormalTex = MakeRoundedTex(16, 16, sendBtnNormal, 4);
             sendBtnHoverTex = MakeRoundedTex(16, 16, sendBtnHover, 4);
+            stopBtnNormalTex = MakeRoundedTex(16, 16, stopBtnNormal, 4);
+            stopBtnHoverTex = MakeRoundedTex(16, 16, stopBtnHover, 4);
             inputFieldBgTex = MakeRoundedTex(16, 16, inputFieldBg, 4);
 
             // Header title style
@@ -317,6 +324,20 @@ namespace LLMAgent.Editor
                 normal = { background = sendBtnNormalTex, textColor = Color.white },
                 hover = { background = sendBtnHoverTex, textColor = Color.white },
                 active = { background = sendBtnHoverTex, textColor = new Color(0.85f, 0.85f, 0.9f) },
+                border = new RectOffset(4, 4, 4, 4),
+                padding = new RectOffset(14, 14, 6, 6),
+                margin = new RectOffset(4, 0, 0, 0)
+            };
+
+            // Stop button (shown during generation)
+            stopButtonStyle = new GUIStyle()
+            {
+                fontSize = 13,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                normal = { background = stopBtnNormalTex, textColor = Color.white },
+                hover = { background = stopBtnHoverTex, textColor = Color.white },
+                active = { background = stopBtnHoverTex, textColor = new Color(0.9f, 0.85f, 0.85f) },
                 border = new RectOffset(4, 4, 4, 4),
                 padding = new RectOffset(14, 14, 6, 6),
                 margin = new RectOffset(4, 0, 0, 0)
@@ -1085,8 +1106,17 @@ namespace LLMAgent.Editor
             // Buttons column
             EditorGUILayout.BeginVertical(GUILayout.Width(68));
 
-            // Send button
-            bool sendClicked = GUILayout.Button("Send \u25B6", sendButtonStyle, GUILayout.Height(28), GUILayout.Width(68));
+            // Send / Stop button (toggles based on generation state)
+            bool sendClicked = false;
+            bool stopClicked = false;
+            if (isWaitingForResponse)
+            {
+                stopClicked = GUILayout.Button("Stop \u25A0", stopButtonStyle, GUILayout.Height(28), GUILayout.Width(68));
+            }
+            else
+            {
+                sendClicked = GUILayout.Button("Send \u25B6", sendButtonStyle, GUILayout.Height(28), GUILayout.Width(68));
+            }
 
             GUILayout.Space(2);
 
@@ -1099,8 +1129,17 @@ namespace LLMAgent.Editor
 
             EditorGUILayout.EndVertical();
 
-            // Process send
-            if ((sendClicked || enterPressed) && !string.IsNullOrWhiteSpace(inputText))
+            // Process stop
+            if (stopClicked)
+            {
+                if (scriptManager != null && scriptManager.IsInitialized)
+                {
+                    scriptManager.AbortGeneration();
+                }
+            }
+
+            // Process send (guard: not while waiting for response)
+            if (!isWaitingForResponse && (sendClicked || enterPressed) && !string.IsNullOrWhiteSpace(inputText))
             {
                 SendMessage(inputText.Trim(), attachedImagePath);
                 inputText = "";
@@ -1372,6 +1411,8 @@ namespace LLMAgent.Editor
             DestroyTexture(inputAreaBgTex);
             DestroyTexture(sendBtnNormalTex);
             DestroyTexture(sendBtnHoverTex);
+            DestroyTexture(stopBtnNormalTex);
+            DestroyTexture(stopBtnHoverTex);
             DestroyTexture(inputFieldBgTex);
             DestroyTexture(settingsBgTex);
             DestroyTexture(copyBtnNormalTex);
