@@ -287,6 +287,7 @@ namespace LLMAgent
             UnityEngine.Object.DestroyImmediate(rt);
 
             byte[] pngBytes = tex.EncodeToPNG();
+/*
 #if UNITY_EDITOR
             // Save a debug copy to disk for inspection
             try
@@ -300,6 +301,7 @@ namespace LLMAgent
                 Debug.LogWarning($"[ScreenCaptureBridge] Failed to save debug screenshot: {ex.Message}");
             }
 #endif
+*/
             Debug.Log($"[ScreenCaptureBridge] Scene view screenshot: {captureWidth}x{captureHeight}, {pngBytes.Length} bytes");
             string base64 = Convert.ToBase64String(pngBytes);
             UnityEngine.Object.DestroyImmediate(tex);
