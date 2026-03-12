@@ -81,9 +81,14 @@ namespace LLMAgent.Editor
             public string Timestamp;
             public string ImagePath; // optional: path to attached image
             public bool ShowContinueButton; // true when step limit was reached
+            public bool ShowRetryButton;    // true when an error occurred (e.g. timeout)
+            public string RetryUserMessage; // original user message for retry
+            public string RetryImagePath;   // original image path for retry
+            public bool RetryIsContinue;    // true if the failed operation was a "continue generation"
         }
 
         private const string STEP_LIMIT_PREFIX = "[STEP_LIMIT_REACHED]";
+        private const string ERROR_PREFIX = "[Agent] Error:";
 
         [MenuItem("Puerts Agent/New Chat Window")]
         public static void ShowWindow()
@@ -760,7 +765,8 @@ namespace LLMAgent.Editor
                     {
                         isWaitingForResponse = false;
 
-                        bool hitStepLimit = !isError && response != null && response.StartsWith(STEP_LIMIT_PREFIX);
+                        bool isActualError = isError || (response != null && response.StartsWith(ERROR_PREFIX));
+                        bool hitStepLimit = !isActualError && response != null && response.StartsWith(STEP_LIMIT_PREFIX);
                         string displayText = hitStepLimit ? response.Substring(STEP_LIMIT_PREFIX.Length) : response;
 
                         if (hitStepLimit && string.IsNullOrWhiteSpace(displayText))
@@ -773,7 +779,11 @@ namespace LLMAgent.Editor
                             Text = displayText,
                             IsUser = false,
                             Timestamp = DateTime.Now.ToString("HH:mm"),
-                            ShowContinueButton = hitStepLimit
+                            ShowContinueButton = hitStepLimit,
+                            ShowRetryButton = isActualError,
+                            RetryIsContinue = isActualError,
+                            RetryUserMessage = null,
+                            RetryImagePath = null
                         });
                         shouldScrollToBottom = true;
                         Repaint();
@@ -781,6 +791,110 @@ namespace LLMAgent.Editor
                 }
 
                 GUI.backgroundColor = originalBg;
+                EditorGUILayout.EndHorizontal();
+            }
+
+            // "Retry" button when an error occurred
+            if (msg.ShowRetryButton && !isWaitingForResponse)
+            {
+                GUILayout.Space(4);
+                EditorGUILayout.BeginHorizontal();
+
+                Color originalBgRetry = GUI.backgroundColor;
+                GUI.backgroundColor = EditorGUIUtility.isProSkin
+                    ? new Color(0.85f, 0.45f, 0.25f, 1f)
+                    : new Color(0.80f, 0.35f, 0.20f, 1f);
+
+                GUIStyle retryButtonStyle = new GUIStyle(GUI.skin.button)
+                {
+                    fontStyle = FontStyle.Bold,
+                    fontSize = 12,
+                    padding = new RectOffset(12, 12, 6, 6),
+                    normal = { textColor = Color.white },
+                    hover = { textColor = Color.white }
+                };
+
+                if (GUILayout.Button("\U0001F504 Request failed. Retry?", retryButtonStyle, GUILayout.Height(28)))
+                {
+                    // Remove the retry button by clearing the flag
+                    var retryUpdated = messages[msgIndex];
+                    retryUpdated.ShowRetryButton = false;
+                    messages[msgIndex] = retryUpdated;
+
+                    bool isContinue = msg.RetryIsContinue;
+                    string retryMessage = msg.RetryUserMessage;
+                    string retryImagePath = msg.RetryImagePath;
+
+                    // Start retry
+                    isWaitingForResponse = true;
+                    shouldScrollToBottom = true;
+                    Repaint();
+
+                    if (isContinue)
+                    {
+                        // Retry a "continue generation" operation
+                        scriptManager.ContinueGenerationAsync((response, isError) =>
+                        {
+                            isWaitingForResponse = false;
+
+                            bool isActualError = isError || (response != null && response.StartsWith(ERROR_PREFIX));
+                            bool hitStepLimit = !isActualError && response != null && response.StartsWith(STEP_LIMIT_PREFIX);
+                            string retryDisplayText = hitStepLimit ? response.Substring(STEP_LIMIT_PREFIX.Length) : response;
+
+                            if (hitStepLimit && string.IsNullOrWhiteSpace(retryDisplayText))
+                            {
+                                retryDisplayText = "(The agent has been working on your request...)";
+                            }
+
+                            messages.Add(new ChatMessage
+                            {
+                                Text = retryDisplayText,
+                                IsUser = false,
+                                Timestamp = DateTime.Now.ToString("HH:mm"),
+                                ShowContinueButton = hitStepLimit,
+                                ShowRetryButton = isActualError,
+                                RetryIsContinue = isActualError,
+                                RetryUserMessage = null,
+                                RetryImagePath = null
+                            });
+                            shouldScrollToBottom = true;
+                            Repaint();
+                        });
+                    }
+                    else
+                    {
+                        // Retry a normal send message operation
+                        scriptManager.SendMessageAsync(retryMessage, retryImagePath, (response, isError) =>
+                        {
+                            isWaitingForResponse = false;
+
+                            bool isActualError = isError || (response != null && response.StartsWith(ERROR_PREFIX));
+                            bool hitStepLimit = !isActualError && response != null && response.StartsWith(STEP_LIMIT_PREFIX);
+                            string retryDisplayText = hitStepLimit ? response.Substring(STEP_LIMIT_PREFIX.Length) : response;
+
+                            if (hitStepLimit && string.IsNullOrWhiteSpace(retryDisplayText))
+                            {
+                                retryDisplayText = "(The agent has been working on your request...)";
+                            }
+
+                            messages.Add(new ChatMessage
+                            {
+                                Text = retryDisplayText,
+                                IsUser = false,
+                                Timestamp = DateTime.Now.ToString("HH:mm"),
+                                ShowContinueButton = hitStepLimit,
+                                ShowRetryButton = isActualError,
+                                RetryIsContinue = false,
+                                RetryUserMessage = isActualError ? retryMessage : null,
+                                RetryImagePath = isActualError ? retryImagePath : null
+                            });
+                            shouldScrollToBottom = true;
+                            Repaint();
+                        });
+                    }
+                }
+
+                GUI.backgroundColor = originalBgRetry;
                 EditorGUILayout.EndHorizontal();
             }
 
@@ -1063,7 +1177,9 @@ namespace LLMAgent.Editor
                 {
                     isWaitingForResponse = false;
 
-                    bool hitStepLimit = !isError && response != null && response.StartsWith(STEP_LIMIT_PREFIX);
+                    // Detect errors: either isError flag from TS, or response starts with error prefix
+                    bool isActualError = isError || (response != null && response.StartsWith(ERROR_PREFIX));
+                    bool hitStepLimit = !isActualError && response != null && response.StartsWith(STEP_LIMIT_PREFIX);
                     string displayText = hitStepLimit ? response.Substring(STEP_LIMIT_PREFIX.Length) : response;
 
                     // If the display text is empty (all steps were tool calls), show an informative message
@@ -1077,7 +1193,11 @@ namespace LLMAgent.Editor
                         Text = displayText,
                         IsUser = false,
                         Timestamp = DateTime.Now.ToString("HH:mm"),
-                        ShowContinueButton = hitStepLimit
+                        ShowContinueButton = hitStepLimit,
+                        ShowRetryButton = isActualError,
+                        RetryIsContinue = false,
+                        RetryUserMessage = isActualError ? text : null,
+                        RetryImagePath = isActualError ? imagePath : null
                     });
                     shouldScrollToBottom = true;
                     Repaint();
