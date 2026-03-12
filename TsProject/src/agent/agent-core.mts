@@ -682,6 +682,249 @@ function buildSystemPrompt(): string {
         .replace(/\{IMAGE_PREFIX\}/g, bigStringStore.imagePrefix);
 }
 
+// ============================================================
+// Shared helpers for sendMessage / continueGeneration
+// ============================================================
+
+/**
+ * Create the full tool set used by the agent.
+ */
+function createToolSet() {
+    return {
+        ...createUnityLogTools(),
+        ...createScreenshotTools(),
+        ...createSceneViewNavigationTools(),
+        ...createTypeReflectionTools(),
+        ...createEvalTools(),
+        ...createRetrieveBigStringTool(),
+    };
+}
+
+/**
+ * Create an OpenAI provider and chat model from the current config.
+ */
+function createModel() {
+    const provider = createOpenAI({
+        apiKey: currentConfig.apiKey,
+        baseURL: currentConfig.baseURL,
+    });
+    return provider.chat(currentConfig.model || 'gpt-4o-mini');
+}
+
+/**
+ * onStepFinish callback for generateText.
+ * Reports tool call results and intermediate text to the UI via onProgress.
+ */
+function handleStepFinish(onProgress: ((text: string) => void) | undefined, { stepNumber, text, toolCalls, toolResults, finishReason }: any): void {
+    if (!onProgress) return;
+
+    let progressText = '';
+    if (toolResults && toolResults.length > 0) {
+        for (const tr of toolResults) {
+            const ok = isToolResultSuccess(tr.output);
+            if (ok) {
+                progressText += `<color=#4CAF50>[OK]</color> ${tr.toolName}\n`;
+            } else {
+                const errMsg = extractToolErrorMessage(tr.output);
+                progressText += `<color=#F44336>[FAIL]</color> ${tr.toolName}: ${errMsg}\n`;
+            }
+        }
+    } else if (toolCalls && toolCalls.length > 0) {
+        for (const tc of toolCalls) {
+            progressText += `<color=#FFA726>[CALL]</color> ${tc.toolName}\n`;
+        }
+    }
+    if (text) {
+        const truncatedText = text.length > 500 ? text.substring(0, 500) + '...' : text;
+        progressText += truncatedText;
+    }
+    if (progressText) {
+        onProgress(progressText.trim());
+    }
+}
+
+/**
+ * prepareStep callback for generateText.
+ * Handles big-string compression, sliding-window trimming,
+ * and screenshot image extraction.
+ */
+function handlePrepareStep({ messages, stepNumber, steps }: any): any {
+    if (stepNumber === 0) return undefined;
+
+    // ---- (1) Compress big strings in OLDER messages ----
+    const { messages: compressed, replaced } = compressMessages(messages, 2);
+    let newMessages = replaced > 0 ? compressed : [...messages];
+    if (replaced > 0) {
+        console.log(`[Agent] prepareStep(${stepNumber}): compressed ${replaced} big strings (store size: ${bigStringStore.size})`);
+    }
+
+    // ---- (1.5) Sliding window: check actual token usage from last step ----
+    if (ENABLE_SLIDING_WINDOW) {
+        const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
+        const lastInputTokens = lastStep?.usage?.inputTokens;
+        if (lastInputTokens && lastInputTokens > MAX_INPUT_TOKENS) {
+            console.log(`[Agent] prepareStep(${stepNumber}): last step used ${lastInputTokens} input tokens, exceeds ${MAX_INPUT_TOKENS}, trimming...`);
+            const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
+            const trimmedMsgs = newMessages.slice(newMessages.length - keep);
+            if (historySummary) {
+                trimmedMsgs.unshift({
+                    role: 'user' as const,
+                    content: `[Context Summary - the following is a summary of earlier conversation that was trimmed to save context space]:\n${historySummary}`,
+                } as any);
+            }
+            newMessages = trimmedMsgs;
+            console.log(`[Agent] prepareStep(${stepNumber}): trimmed to ${newMessages.length} messages`);
+        } else {
+            const estimatedTokens = estimateTokens(newMessages);
+            if (estimatedTokens > MAX_INPUT_TOKENS) {
+                console.log(`[Agent] prepareStep(${stepNumber}): estimated ${estimatedTokens} tokens, exceeds ${MAX_INPUT_TOKENS}, trimming...`);
+                const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
+                const trimmedMsgs = newMessages.slice(newMessages.length - keep);
+                if (historySummary) {
+                    trimmedMsgs.unshift({
+                        role: 'user' as const,
+                        content: `[Context Summary - the following is a summary of earlier conversation that was trimmed to save context space]:\n${historySummary}`,
+                    } as any);
+                }
+                newMessages = trimmedMsgs;
+                console.log(`[Agent] prepareStep(${stepNumber}): trimmed to ${newMessages.length} messages`);
+            }
+        }
+    }
+
+    // ---- (2) Extract screenshot images from the last tool message ----
+    const lastMsg = newMessages[newMessages.length - 1];
+    if (!lastMsg || lastMsg.role !== 'tool') {
+        return replaced > 0 ? { messages: newMessages } : undefined;
+    }
+
+    const imageParts: Array<any> = [];
+    const patchedContent: any[] = [];
+
+    for (const part of lastMsg.content as any[]) {
+        if (
+            part.type === 'tool-result' &&
+            part.output?.type === 'content' &&
+            Array.isArray(part.output.value)
+        ) {
+            const textItems: any[] = [];
+            for (const item of part.output.value) {
+                if (item.type === 'file-data' && item.mediaType?.startsWith('image/')) {
+                    imageParts.push({
+                        type: 'image' as const,
+                        image: item.data,
+                        mediaType: item.mediaType,
+                    });
+                } else {
+                    textItems.push(item);
+                }
+            }
+
+            if (imageParts.length > 0) {
+                patchedContent.push({
+                    ...part,
+                    output: textItems.length > 0
+                        ? { type: 'content' as const, value: textItems }
+                        : { type: 'text' as const, value: textItems.map((t: any) => t.text || '').join('\n') || 'Screenshot captured.' },
+                });
+            } else {
+                patchedContent.push(part);
+            }
+        } else {
+            patchedContent.push(part);
+        }
+    }
+
+    if (imageParts.length > 0) {
+        console.log(`[Agent] prepareStep(${stepNumber}): injecting ${imageParts.length} screenshot image(s) as user message`);
+        newMessages[newMessages.length - 1] = {
+            role: 'tool',
+            content: patchedContent,
+        } as any;
+        newMessages.push({
+            role: 'user',
+            content: [
+                ...imageParts,
+                {
+                    type: 'text' as const,
+                    text: 'Above is the screenshot I just captured. Please analyze it and respond to my earlier request.',
+                },
+            ],
+        } as any);
+    }
+
+    return { messages: newMessages };
+}
+
+/**
+ * Compress history and apply sliding-window trimming.
+ * Shared pre-processing for both sendMessage and continueGeneration.
+ */
+async function prepareHistory(): Promise<void> {
+    compressHistoryMessages();
+
+    if (ENABLE_SLIDING_WINDOW) {
+        const estimated = estimateTokens(conversationHistory);
+        if (estimated > MAX_INPUT_TOKENS) {
+            const { messages: trimmed, trimmed: didTrim } = await trimMessagesByTokenBudget(
+                conversationHistory, MAX_INPUT_TOKENS, true
+            );
+            if (didTrim) {
+                conversationHistory = trimmed as ModelMessage[];
+                compressedUpToIndex = conversationHistory.length;
+            }
+        }
+    }
+}
+
+/**
+ * Core generation logic shared by sendMessage and continueGeneration.
+ * Calls generateText, appends response messages to history, handles
+ * step-limit detection and errors.
+ *
+ * @param onProgress  Optional progress callback for the UI.
+ * @param logPrefix   Log prefix for prepareStep messages.
+ * @returns The assistant's text response.
+ */
+async function runGeneration(onProgress?: (text: string) => void): Promise<string> {
+    try {
+        const model = createModel();
+        const tools = createToolSet();
+
+        const result = await generateText({
+            model,
+            system: buildSystemPrompt(),
+            messages: conversationHistory,
+            tools,
+            stopWhen: stepCountIs(MAX_STEPS),
+            onStepFinish: (stepResult) => handleStepFinish(onProgress, stepResult),
+            prepareStep: handlePrepareStep,
+        });
+
+        // Append all response messages (assistant + tool) to conversation history
+        for (const msg of result.response.messages) {
+            conversationHistory.push(msg as ModelMessage);
+        }
+
+        // Check if the step limit was reached
+        if (result.steps.length >= MAX_STEPS) {
+            const partialText = result.text || '';
+            console.log(`[Agent] Reached max steps (${MAX_STEPS}). Pausing for user confirmation.`);
+            return `${STEP_LIMIT_PREFIX}${partialText}`;
+        }
+
+        return result.text;
+    } catch (error: any) {
+        const errorMsg = `[Agent] Error: ${error.message || String(error)}`;
+        console.error(errorMsg);
+
+        // Remove the last user message from history on failure
+        conversationHistory.pop();
+
+        return errorMsg;
+    }
+}
+
 /**
  * Send a message to the LLM and get a response.
  * This is the main async function called from C#.
@@ -696,22 +939,8 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
         return '[Agent] Not configured. Please set API key first via the Settings panel.';
     }
 
-    // ---- Compress big strings in PREVIOUS history before adding new message ----
-    compressHistoryMessages();
-
-    // ---- Sliding window: trim conversationHistory if too long (cross-round) ----
-    if (ENABLE_SLIDING_WINDOW) {
-        const estimated = estimateTokens(conversationHistory);
-        if (estimated > MAX_INPUT_TOKENS) {
-            const { messages: trimmed, trimmed: didTrim } = await trimMessagesByTokenBudget(
-                conversationHistory, MAX_INPUT_TOKENS, /* doSummarize */ true
-            );
-            if (didTrim) {
-                conversationHistory = trimmed as ModelMessage[];
-                compressedUpToIndex = conversationHistory.length; // already compressed
-            }
-        }
-    }
+    // Compress & trim history
+    await prepareHistory();
 
     // Add user message to history (with optional image)
     if (imageBase64 && imageMimeType) {
@@ -737,211 +966,7 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
         });
     }
 
-    try {
-        const provider = createOpenAI({
-            apiKey: currentConfig.apiKey,
-            baseURL: currentConfig.baseURL,
-        });
-
-        // Use provider.chat() to force Chat Completions API format.
-        // In @ai-sdk/openai v3, provider() defaults to the Responses API
-        // which uses a different request format (input/input_text) that
-        // most third-party proxy endpoints do not support.
-        const model = provider.chat(currentConfig.model || 'gpt-4o-mini');
-
-        // Create tools for the agent
-        const tools = {
-            ...createUnityLogTools(),
-            ...createScreenshotTools(),
-            ...createSceneViewNavigationTools(),
-            ...createTypeReflectionTools(),
-            ...createEvalTools(),
-            ...createRetrieveBigStringTool(),
-        };
-
-        const result = await generateText({
-            model,
-            system: buildSystemPrompt(),
-            messages: conversationHistory,
-            tools,
-            stopWhen: stepCountIs(MAX_STEPS),
-            onStepFinish({ stepNumber, text, toolCalls, toolResults, finishReason }) {
-                if (onProgress) {
-                    let progressText = '';
-                    if (toolResults && toolResults.length > 0) {
-                        for (const tr of toolResults) {
-                            const ok = isToolResultSuccess(tr.output);
-                            if (ok) {
-                                progressText += `<color=#4CAF50>[OK]</color> ${tr.toolName}\n`;
-                            } else {
-                                const errMsg = extractToolErrorMessage(tr.output);
-                                progressText += `<color=#F44336>[FAIL]</color> ${tr.toolName}: ${errMsg}\n`;
-                            }
-                        }
-                    } else if (toolCalls && toolCalls.length > 0) {
-                        // Fallback: if toolResults not available yet, show tool call names
-                        for (const tc of toolCalls) {
-                            progressText += `<color=#FFA726>[CALL]</color> ${tc.toolName}\n`;
-                        }
-                    }
-                    if (text) {
-                        const truncatedText = text.length > 500 ? text.substring(0, 500) + '...' : text;
-                        progressText += truncatedText;
-                    }
-                    if (progressText) {
-                        onProgress(progressText.trim());
-                    }
-                }
-            },
-            prepareStep({ messages, stepNumber, steps }) {
-                if (stepNumber === 0) return undefined;
-
-                // ---- (1) Compress big strings in OLDER messages ----
-                // Skip the last 2 messages (the assistant tool-call + tool result
-                // from the most recent step) so the model can see the fresh result.
-                const { messages: compressed, replaced } = compressMessages(messages, 2);
-                let newMessages = replaced > 0 ? compressed : [...messages];
-                if (replaced > 0) {
-                    console.log(`[Agent] prepareStep(${stepNumber}): compressed ${replaced} big strings (store size: ${bigStringStore.size})`);
-                }
-
-                // ---- (1.5) Sliding window: check actual token usage from last step ----
-                if (!ENABLE_SLIDING_WINDOW) {
-                    // Sliding window disabled -- skip token checks and trimming.
-                } else {
-                // Use the real inputTokens from the previous step if available.
-                const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
-                const lastInputTokens = lastStep?.usage?.inputTokens;
-                if (lastInputTokens && lastInputTokens > MAX_INPUT_TOKENS) {
-                    console.log(`[Agent] prepareStep(${stepNumber}): last step used ${lastInputTokens} input tokens, exceeds ${MAX_INPUT_TOKENS}, trimming...`);
-                    // Synchronous trim without summarization (we're inside prepareStep,
-                    // can't easily await an LLM call without blocking the step loop).
-                    // Keep MIN_KEEP_MESSAGES from the end.
-                    const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
-                    const trimmedMsgs = newMessages.slice(newMessages.length - keep);
-
-                    // Prepend existing summary if available
-                    if (historySummary) {
-                        trimmedMsgs.unshift({
-                            role: 'user' as const,
-                            content: `[Context Summary - the following is a summary of earlier conversation that was trimmed to save context space]:\n${historySummary}`,
-                        } as any);
-                    }
-                    newMessages = trimmedMsgs;
-                    console.log(`[Agent] prepareStep(${stepNumber}): trimmed to ${newMessages.length} messages`);
-                } else {
-                    // Fallback: estimate from serialized size
-                    const estimatedTokens = estimateTokens(newMessages);
-                    if (estimatedTokens > MAX_INPUT_TOKENS) {
-                        console.log(`[Agent] prepareStep(${stepNumber}): estimated ${estimatedTokens} tokens, exceeds ${MAX_INPUT_TOKENS}, trimming...`);
-                        const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
-                        const trimmedMsgs = newMessages.slice(newMessages.length - keep);
-                        if (historySummary) {
-                            trimmedMsgs.unshift({
-                                role: 'user' as const,
-                                content: `[Context Summary - the following is a summary of earlier conversation that was trimmed to save context space]:\n${historySummary}`,
-                            } as any);
-                        }
-                        newMessages = trimmedMsgs;
-                        console.log(`[Agent] prepareStep(${stepNumber}): trimmed to ${newMessages.length} messages`);
-                    }
-                }
-                } // end ENABLE_SLIDING_WINDOW
-
-                // ---- (2) Extract screenshot images from the last tool message ----
-                // The Chat Completions API converter JSON.stringifies content-type
-                // tool outputs (including file-data images), so the model cannot
-                // "see" them. We extract such images and append a user message
-                // with proper image parts that the converter handles correctly.
-                const lastMsg = newMessages[newMessages.length - 1];
-                if (!lastMsg || lastMsg.role !== 'tool') {
-                    return replaced > 0 ? { messages: newMessages } : undefined;
-                }
-
-                const imageParts: Array<any> = [];
-                const patchedContent: any[] = [];
-
-                for (const part of lastMsg.content as any[]) {
-                    if (
-                        part.type === 'tool-result' &&
-                        part.output?.type === 'content' &&
-                        Array.isArray(part.output.value)
-                    ) {
-                        const textItems: any[] = [];
-                        for (const item of part.output.value) {
-                            if (item.type === 'file-data' && item.mediaType?.startsWith('image/')) {
-                                imageParts.push({
-                                    type: 'image' as const,
-                                    image: item.data,
-                                    mediaType: item.mediaType,
-                                });
-                            } else {
-                                textItems.push(item);
-                            }
-                        }
-
-                        if (imageParts.length > 0) {
-                            // Replace content output with text-only version
-                            patchedContent.push({
-                                ...part,
-                                output: textItems.length > 0
-                                    ? { type: 'content' as const, value: textItems }
-                                    : { type: 'text' as const, value: textItems.map((t: any) => t.text || '').join('\n') || 'Screenshot captured.' },
-                            });
-                        } else {
-                            patchedContent.push(part);
-                        }
-                    } else {
-                        patchedContent.push(part);
-                    }
-                }
-
-                if (imageParts.length > 0) {
-                    console.log(`[Agent] prepareStep(${stepNumber}): injecting ${imageParts.length} screenshot image(s) as user message`);
-                    // Replace the tool message with patched (image-stripped) version
-                    newMessages[newMessages.length - 1] = {
-                        role: 'tool',
-                        content: patchedContent,
-                    } as any;
-                    // Append user message with the extracted images
-                    newMessages.push({
-                        role: 'user',
-                        content: [
-                            ...imageParts,
-                            {
-                                type: 'text' as const,
-                                text: 'Above is the screenshot I just captured. Please analyze it and respond to my earlier request.',
-                            },
-                        ],
-                    } as any);
-                }
-
-                return { messages: newMessages };
-            },
-        });
-
-        // Append all response messages (assistant + tool) to conversation history
-        for (const msg of result.response.messages) {
-            conversationHistory.push(msg as ModelMessage);
-        }
-
-        // Check if the step limit was reached
-        if (result.steps.length >= MAX_STEPS) {
-            const partialText = result.text || '';
-            console.log(`[Agent] Reached max steps (${MAX_STEPS}). Pausing for user confirmation.`);
-            return `${STEP_LIMIT_PREFIX}${partialText}`;
-        }
-
-        return result.text;
-    } catch (error: any) {
-        const errorMsg = `[Agent] Error: ${error.message || String(error)}`;
-        console.error(errorMsg);
-
-        // Remove the failed user message from history
-        conversationHistory.pop();
-
-        return errorMsg;
-    }
+    return runGeneration(onProgress);
 }
 
 /**
@@ -957,22 +982,8 @@ export async function continueGeneration(onProgress?: (text: string) => void): P
 
     console.log('[Agent] Continuing generation from where it left off...');
 
-    // Compress history before continuing
-    compressHistoryMessages();
-
-    // Sliding window trim if needed
-    if (ENABLE_SLIDING_WINDOW) {
-        const estimated = estimateTokens(conversationHistory);
-        if (estimated > MAX_INPUT_TOKENS) {
-            const { messages: trimmed, trimmed: didTrim } = await trimMessagesByTokenBudget(
-                conversationHistory, MAX_INPUT_TOKENS, true
-            );
-            if (didTrim) {
-                conversationHistory = trimmed as ModelMessage[];
-                compressedUpToIndex = conversationHistory.length;
-            }
-        }
-    }
+    // Compress & trim history
+    await prepareHistory();
 
     // Add a brief user message to prompt the model to continue
     conversationHistory.push({
@@ -980,166 +991,7 @@ export async function continueGeneration(onProgress?: (text: string) => void): P
         content: 'Please continue. Pick up from where you left off and keep working on the task.',
     });
 
-    try {
-        const provider = createOpenAI({
-            apiKey: currentConfig.apiKey,
-            baseURL: currentConfig.baseURL,
-        });
-        const model = provider.chat(currentConfig.model || 'gpt-4o-mini');
-        const tools = {
-            ...createUnityLogTools(),
-            ...createScreenshotTools(),
-            ...createSceneViewNavigationTools(),
-            ...createTypeReflectionTools(),
-            ...createEvalTools(),
-            ...createRetrieveBigStringTool(),
-        };
-
-        const result = await generateText({
-            model,
-            system: buildSystemPrompt(),
-            messages: conversationHistory,
-            tools,
-            stopWhen: stepCountIs(MAX_STEPS),
-            onStepFinish({ stepNumber, text, toolCalls, toolResults, finishReason }) {
-                if (onProgress) {
-                    let progressText = '';
-                    if (toolResults && toolResults.length > 0) {
-                        for (const tr of toolResults) {
-                            const ok = isToolResultSuccess(tr.output);
-                            if (ok) {
-                                progressText += `<color=#4CAF50>[OK]</color> ${tr.toolName}\n`;
-                            } else {
-                                const errMsg = extractToolErrorMessage(tr.output);
-                                progressText += `<color=#F44336>[FAIL]</color> ${tr.toolName}: ${errMsg}\n`;
-                            }
-                        }
-                    } else if (toolCalls && toolCalls.length > 0) {
-                        for (const tc of toolCalls) {
-                            progressText += `<color=#FFA726>[CALL]</color> ${tc.toolName}\n`;
-                        }
-                    }
-                    if (text) {
-                        const truncatedText = text.length > 500 ? text.substring(0, 500) + '...' : text;
-                        progressText += truncatedText;
-                    }
-                    if (progressText) {
-                        onProgress(progressText.trim());
-                    }
-                }
-            },
-            prepareStep({ messages, stepNumber, steps }) {
-                if (stepNumber === 0) return undefined;
-
-                const { messages: compressed, replaced } = compressMessages(messages, 2);
-                let newMessages = replaced > 0 ? compressed : [...messages];
-                if (replaced > 0) {
-                    console.log(`[Agent] continueGeneration prepareStep(${stepNumber}): compressed ${replaced} big strings`);
-                }
-
-                if (ENABLE_SLIDING_WINDOW) {
-                    const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
-                    const lastInputTokens = lastStep?.usage?.inputTokens;
-                    if (lastInputTokens && lastInputTokens > MAX_INPUT_TOKENS) {
-                        const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
-                        const trimmedMsgs = newMessages.slice(newMessages.length - keep);
-                        if (historySummary) {
-                            trimmedMsgs.unshift({
-                                role: 'user' as const,
-                                content: `[Context Summary]:\n${historySummary}`,
-                            } as any);
-                        }
-                        newMessages = trimmedMsgs;
-                    } else {
-                        const estimatedTokens = estimateTokens(newMessages);
-                        if (estimatedTokens > MAX_INPUT_TOKENS) {
-                            const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
-                            const trimmedMsgs = newMessages.slice(newMessages.length - keep);
-                            if (historySummary) {
-                                trimmedMsgs.unshift({
-                                    role: 'user' as const,
-                                    content: `[Context Summary]:\n${historySummary}`,
-                                } as any);
-                            }
-                            newMessages = trimmedMsgs;
-                        }
-                    }
-                }
-
-                // Screenshot image extraction (same logic as sendMessage)
-                const lastMsg = newMessages[newMessages.length - 1];
-                if (!lastMsg || lastMsg.role !== 'tool') {
-                    return replaced > 0 ? { messages: newMessages } : undefined;
-                }
-
-                const imageParts: Array<any> = [];
-                const patchedContent: any[] = [];
-                for (const part of lastMsg.content as any[]) {
-                    if (
-                        part.type === 'tool-result' &&
-                        part.output?.type === 'content' &&
-                        Array.isArray(part.output.value)
-                    ) {
-                        const textItems: any[] = [];
-                        for (const item of part.output.value) {
-                            if (item.type === 'file-data' && item.mediaType?.startsWith('image/')) {
-                                imageParts.push({
-                                    type: 'image' as const,
-                                    image: item.data,
-                                    mediaType: item.mediaType,
-                                });
-                            } else {
-                                textItems.push(item);
-                            }
-                        }
-                        if (imageParts.length > 0) {
-                            patchedContent.push({
-                                ...part,
-                                output: textItems.length > 0
-                                    ? { type: 'content' as const, value: textItems }
-                                    : { type: 'text' as const, value: textItems.map((t: any) => t.text || '').join('\n') || 'Screenshot captured.' },
-                            });
-                        } else {
-                            patchedContent.push(part);
-                        }
-                    } else {
-                        patchedContent.push(part);
-                    }
-                }
-
-                if (imageParts.length > 0) {
-                    newMessages[newMessages.length - 1] = { role: 'tool', content: patchedContent } as any;
-                    newMessages.push({
-                        role: 'user',
-                        content: [
-                            ...imageParts,
-                            { type: 'text' as const, text: 'Above is the screenshot I just captured. Please analyze it and respond to my earlier request.' },
-                        ],
-                    } as any);
-                }
-
-                return { messages: newMessages };
-            },
-        });
-
-        for (const msg of result.response.messages) {
-            conversationHistory.push(msg as ModelMessage);
-        }
-
-        if (result.steps.length >= MAX_STEPS) {
-            const partialText = result.text || '';
-            console.log(`[Agent] Reached max steps again (${MAX_STEPS}). Pausing for user confirmation.`);
-            return `${STEP_LIMIT_PREFIX}${partialText}`;
-        }
-
-        return result.text;
-    } catch (error: any) {
-        const errorMsg = `[Agent] Error: ${error.message || String(error)}`;
-        console.error(errorMsg);
-        // Remove the "continue" user message on failure
-        conversationHistory.pop();
-        return errorMsg;
-    }
+    return runGeneration(onProgress);
 }
 
 /**
