@@ -208,6 +208,42 @@ namespace LLMAgent
 #endif
         }
 
+        /// <summary>
+        /// Manipulate the Scene view camera: zoom, pan, or orbit.
+        /// Only available in the Unity Editor.
+        /// </summary>
+        /// <param name="operation">"zoom", "pan", or "orbit"</param>
+        /// <param name="direction">
+        /// For zoom: "forward" or "backward".
+        /// For pan: "up", "down", "left", or "right".
+        /// For orbit: "up", "down", "left", or "right".
+        /// </param>
+        /// <param name="amount">The amount/intensity of the operation (positive float).</param>
+        /// <param name="callback">Callback invoked with JSON result string</param>
+        public static void ManipulateSceneView(string operation, string direction, float amount, Action<string> callback)
+        {
+            if (callback == null)
+            {
+                Debug.LogError("[ScreenCaptureBridge] Callback is null");
+                return;
+            }
+
+#if UNITY_EDITOR
+            try
+            {
+                string result = DoManipulateSceneView(operation, direction, amount);
+                callback.Invoke(result);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[ScreenCaptureBridge] Scene view manipulation failed: {ex.Message}");
+                callback.Invoke(BuildErrorJson(ex.Message));
+            }
+#else
+            callback.Invoke(BuildErrorJson("Scene view manipulation is only available in the Unity Editor."));
+#endif
+        }
+
 #if UNITY_EDITOR
         /// <summary>
         /// Capture the Scene view using SceneView.lastActiveSceneView.camera.
@@ -269,6 +305,157 @@ namespace LLMAgent
             UnityEngine.Object.DestroyImmediate(tex);
 
             return BuildSuccessJson(base64, captureWidth, captureHeight);
+        }
+
+        /// <summary>
+        /// Perform the actual scene view manipulation.
+        /// </summary>
+        private static string DoManipulateSceneView(string operation, string direction, float amount)
+        {
+            SceneView sceneView = SceneView.lastActiveSceneView;
+            if (sceneView == null)
+            {
+                return BuildErrorJson("No active Scene view found. Please open a Scene view window in the Editor.");
+            }
+
+            if (amount <= 0f) amount = 1f;
+
+            string op = (operation ?? "").ToLowerInvariant().Trim();
+            string dir = (direction ?? "").ToLowerInvariant().Trim();
+
+            switch (op)
+            {
+                case "zoom":
+                    return DoZoom(sceneView, dir, amount);
+                case "pan":
+                    return DoPan(sceneView, dir, amount);
+                case "orbit":
+                    return DoOrbit(sceneView, dir, amount);
+                default:
+                    return BuildErrorJson($"Unknown operation '{operation}'. Use 'zoom', 'pan', or 'orbit'.");
+            }
+        }
+
+        /// <summary>
+        /// Zoom: move along the camera forward axis (equivalent to mouse scroll wheel).
+        /// SceneView.size controls the zoom level in orthographic-like behavior.
+        /// We also move the pivot along the camera forward direction for perspective mode.
+        /// </summary>
+        private static string DoZoom(SceneView sceneView, string direction, float amount)
+        {
+            // SceneView.size represents the "zoom distance". Smaller = closer.
+            float factor;
+            switch (direction)
+            {
+                case "forward":
+                case "in":
+                    factor = 1f / (1f + amount * 0.2f); // shrink size = zoom in
+                    break;
+                case "backward":
+                case "out":
+                    factor = 1f + amount * 0.2f; // grow size = zoom out
+                    break;
+                default:
+                    return BuildErrorJson($"Unknown zoom direction '{direction}'. Use 'forward'/'in' or 'backward'/'out'.");
+            }
+
+            float oldSize = sceneView.size;
+            sceneView.size = Mathf.Clamp(oldSize * factor, 0.01f, 10000f);
+            sceneView.Repaint();
+
+            Debug.Log($"[ScreenCaptureBridge] Scene view zoom {direction}: size {oldSize:F2} -> {sceneView.size:F2}");
+            return BuildManipulationSuccessJson("zoom", direction, amount,
+                $"Zoomed {direction}. Scene view size: {oldSize:F2} -> {sceneView.size:F2}");
+        }
+
+        /// <summary>
+        /// Pan: move the pivot along the camera's local right/up axes (equivalent to middle-mouse drag).
+        /// </summary>
+        private static string DoPan(SceneView sceneView, string direction, float amount)
+        {
+            Camera cam = sceneView.camera;
+            if (cam == null)
+            {
+                return BuildErrorJson("Scene view camera is not available.");
+            }
+
+            // Scale pan distance by current view size for consistent feel
+            float panDistance = amount * sceneView.size * 0.1f;
+            Vector3 offset;
+
+            switch (direction)
+            {
+                case "up":
+                    offset = cam.transform.up * panDistance;
+                    break;
+                case "down":
+                    offset = -cam.transform.up * panDistance;
+                    break;
+                case "left":
+                    offset = -cam.transform.right * panDistance;
+                    break;
+                case "right":
+                    offset = cam.transform.right * panDistance;
+                    break;
+                default:
+                    return BuildErrorJson($"Unknown pan direction '{direction}'. Use 'up', 'down', 'left', or 'right'.");
+            }
+
+            Vector3 oldPivot = sceneView.pivot;
+            sceneView.pivot += offset;
+            sceneView.Repaint();
+
+            Debug.Log($"[ScreenCaptureBridge] Scene view pan {direction}: pivot {oldPivot} -> {sceneView.pivot}");
+            return BuildManipulationSuccessJson("pan", direction, amount,
+                $"Panned {direction}. Pivot moved from {oldPivot} to {sceneView.pivot}");
+        }
+
+        /// <summary>
+        /// Orbit: rotate around the pivot point (equivalent to right-mouse drag).
+        /// </summary>
+        private static string DoOrbit(SceneView sceneView, string direction, float amount)
+        {
+            // Orbit angles in degrees
+            float angleDeg = amount * 15f; // 15 degrees per unit of amount
+            Quaternion oldRotation = sceneView.rotation;
+            Quaternion delta;
+
+            switch (direction)
+            {
+                case "up":
+                    // Rotate around the camera's local right axis (pitch up)
+                    delta = Quaternion.AngleAxis(-angleDeg, sceneView.rotation * Vector3.right);
+                    break;
+                case "down":
+                    // Rotate around the camera's local right axis (pitch down)
+                    delta = Quaternion.AngleAxis(angleDeg, sceneView.rotation * Vector3.right);
+                    break;
+                case "left":
+                    // Rotate around world up axis (yaw left)
+                    delta = Quaternion.AngleAxis(-angleDeg, Vector3.up);
+                    break;
+                case "right":
+                    // Rotate around world up axis (yaw right)
+                    delta = Quaternion.AngleAxis(angleDeg, Vector3.up);
+                    break;
+                default:
+                    return BuildErrorJson($"Unknown orbit direction '{direction}'. Use 'up', 'down', 'left', or 'right'.");
+            }
+
+            sceneView.rotation = delta * sceneView.rotation;
+            sceneView.Repaint();
+
+            Vector3 oldEuler = oldRotation.eulerAngles;
+            Vector3 newEuler = sceneView.rotation.eulerAngles;
+            Debug.Log($"[ScreenCaptureBridge] Scene view orbit {direction}: rotation {oldEuler} -> {newEuler}");
+            return BuildManipulationSuccessJson("orbit", direction, amount,
+                $"Orbited {direction} by {angleDeg:F1}°. Rotation: ({oldEuler.x:F1}, {oldEuler.y:F1}, {oldEuler.z:F1}) -> ({newEuler.x:F1}, {newEuler.y:F1}, {newEuler.z:F1})");
+        }
+
+        private static string BuildManipulationSuccessJson(string operation, string direction, float amount, string description)
+        {
+            string escaped = EscapeJson(description);
+            return $"{{\"success\":true,\"operation\":\"{operation}\",\"direction\":\"{direction}\",\"amount\":{amount},\"description\":\"{escaped}\"}}";
         }
 #endif
 

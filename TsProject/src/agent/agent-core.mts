@@ -8,6 +8,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { createUnityLogTools } from '../tools/unity-log-tool.mjs';
 import { createScreenshotTools } from '../tools/screenshot-tool.mjs';
+import { createSceneViewNavigationTools } from '../tools/scene-view-tool.mjs';
 import { createTypeReflectionTools } from '../tools/type-reflection-tool.mjs';
 import { createEvalTools } from '../tools/eval-tool.mjs';
 
@@ -718,6 +719,7 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
         const tools = {
             ...createUnityLogTools(),
             ...createScreenshotTools(),
+            ...createSceneViewNavigationTools(),
             ...createTypeReflectionTools(),
             ...createEvalTools(),
             ...createRetrieveBigStringTool(),
@@ -925,6 +927,7 @@ export async function continueGeneration(): Promise<string> {
         const tools = {
             ...createUnityLogTools(),
             ...createScreenshotTools(),
+            ...createSceneViewNavigationTools(),
             ...createTypeReflectionTools(),
             ...createEvalTools(),
             ...createRetrieveBigStringTool(),
