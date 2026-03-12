@@ -195,7 +195,7 @@ namespace LLMAgent
 
             byte[] pngBytes = finalTex.EncodeToPNG();
 
-
+/*
 #if UNITY_EDITOR
             // Save a debug copy to disk for inspection
             try
@@ -209,7 +209,7 @@ namespace LLMAgent
                 Debug.LogWarning($"[ScreenCaptureBridge] Failed to save debug screenshot: {ex.Message}");
             }
 #endif
-
+*/
             /*
             // TEMP: Override with apple.png for testing vision capability
             string testImagePath = Path.Combine(Application.dataPath, "..", "apple.png");
