@@ -773,8 +773,17 @@ namespace LLMAgent.Editor
                 && !Event.current.shift
                 && GUI.GetNameOfFocusedControl() == InputControlName;
 
-            // Attach image button
-            GUIContent attachIcon = new GUIContent("\U0001F4F7", "Attach an image file");
+            // Attach image button – use Unity built-in icon for reliable rendering
+            GUIContent attachIcon = EditorGUIUtility.IconContent("d_RawImage Icon");
+            if (attachIcon == null || attachIcon.image == null)
+                attachIcon = EditorGUIUtility.IconContent("RawImage Icon");
+            if (attachIcon == null || attachIcon.image == null)
+                attachIcon = EditorGUIUtility.IconContent("d_Image Icon");
+            if (attachIcon == null || attachIcon.image == null)
+                attachIcon = EditorGUIUtility.IconContent("d_Texture Icon");
+            if (attachIcon == null || attachIcon.image == null)
+                attachIcon = new GUIContent("Img");
+            attachIcon = new GUIContent(attachIcon.image, "Attach an image file");
             GUIStyle attachBtnStyle = new GUIStyle(EditorStyles.miniButton)
             {
                 fontSize = 14,
