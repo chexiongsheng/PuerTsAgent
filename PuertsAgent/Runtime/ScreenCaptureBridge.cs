@@ -2,6 +2,9 @@ using System;
 using System.Collections;
 using System.IO;
 using UnityEngine;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace LLMAgent
 {
@@ -173,6 +176,101 @@ namespace LLMAgent
 
             return BuildSuccessJson(base64, captureWidth, captureHeight);
         }
+
+        /// <summary>
+        /// Capture the Scene view and return the result as a base64-encoded PNG via callback.
+        /// Only available in the Unity Editor.
+        /// </summary>
+        /// <param name="maxWidth">Maximum width to resize to</param>
+        /// <param name="maxHeight">Maximum height to resize to</param>
+        /// <param name="callback">Callback invoked with JSON result string</param>
+        public static void CaptureSceneViewAsync(int maxWidth, int maxHeight, Action<string> callback)
+        {
+            if (callback == null)
+            {
+                Debug.LogError("[ScreenCaptureBridge] Callback is null");
+                return;
+            }
+
+#if UNITY_EDITOR
+            try
+            {
+                string result = CaptureSceneView(maxWidth, maxHeight);
+                callback.Invoke(result);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[ScreenCaptureBridge] Scene view capture failed: {ex.Message}");
+                callback.Invoke(BuildErrorJson(ex.Message));
+            }
+#else
+            callback.Invoke(BuildErrorJson("Scene view capture is only available in the Unity Editor."));
+#endif
+        }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// Capture the Scene view using SceneView.lastActiveSceneView.camera.
+        /// </summary>
+        private static string CaptureSceneView(int maxWidth, int maxHeight)
+        {
+            SceneView sceneView = SceneView.lastActiveSceneView;
+            if (sceneView == null)
+            {
+                return BuildErrorJson("No active Scene view found. Please open a Scene view window in the Editor.");
+            }
+
+            Camera sceneCamera = sceneView.camera;
+            if (sceneCamera == null)
+            {
+                return BuildErrorJson("Scene view camera is not available.");
+            }
+
+            int captureWidth = maxWidth > 0 ? maxWidth : 512;
+            int captureHeight = maxHeight > 0 ? maxHeight : 512;
+
+            // Create a RenderTexture and render the scene camera into it
+            RenderTexture rt = new RenderTexture(captureWidth, captureHeight, 24, RenderTextureFormat.ARGB32);
+            rt.Create();
+
+            RenderTexture previousTarget = sceneCamera.targetTexture;
+            RenderTexture previousActive = RenderTexture.active;
+
+            sceneCamera.targetTexture = rt;
+            sceneCamera.Render();
+
+            RenderTexture.active = rt;
+            Texture2D tex = new Texture2D(captureWidth, captureHeight, TextureFormat.RGB24, false);
+            tex.ReadPixels(new Rect(0, 0, captureWidth, captureHeight), 0, 0);
+            tex.Apply();
+
+            // Restore camera state
+            sceneCamera.targetTexture = previousTarget;
+            RenderTexture.active = previousActive;
+            rt.Release();
+            UnityEngine.Object.DestroyImmediate(rt);
+
+            byte[] pngBytes = tex.EncodeToPNG();
+#if UNITY_EDITOR
+            // Save a debug copy to disk for inspection
+            try
+            {
+                string debugPath = Path.Combine(Application.dataPath, "..", "debug_screenshot.png");
+                File.WriteAllBytes(debugPath, pngBytes);
+                Debug.Log($"[ScreenCaptureBridge] Debug screenshot saved to: {Path.GetFullPath(debugPath)} ({captureWidth}x{captureHeight})");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[ScreenCaptureBridge] Failed to save debug screenshot: {ex.Message}");
+            }
+#endif
+            Debug.Log($"[ScreenCaptureBridge] Scene view screenshot: {captureWidth}x{captureHeight}, {pngBytes.Length} bytes");
+            string base64 = Convert.ToBase64String(pngBytes);
+            UnityEngine.Object.DestroyImmediate(tex);
+
+            return BuildSuccessJson(base64, captureWidth, captureHeight);
+        }
+#endif
 
         /// <summary>
         /// Process a captured Texture2D: optionally resize, encode to PNG, and return JSON.

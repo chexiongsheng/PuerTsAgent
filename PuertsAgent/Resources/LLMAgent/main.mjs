@@ -38875,7 +38875,7 @@ function createScreenshotTools() {
      * Capture the current Unity game screen.
      */
     captureScreenshot: tool({
-      description: "Capture a screenshot of the current Unity game view. Returns a PNG image of the screen that you can visually analyze. Use this tool when you need to see what is currently displayed in the game, diagnose visual issues, check UI layout, or analyze the game state visually. The image will be resized to fit within the specified max dimensions to reduce token usage.",
+      description: "Capture a screenshot of the current Unity game view (Game window). Returns a PNG image of the screen that you can visually analyze. Use this tool when you need to see what is currently displayed in the game, diagnose visual issues, check UI layout, or analyze the game state visually. The image will be resized to fit within the specified max dimensions to reduce token usage.",
       inputSchema: external_exports.object({
         maxWidth: external_exports.number().int().min(64).max(1920).default(512).describe(
           "Maximum width of the captured image in pixels (64-1920, default 512). Lower values reduce token cost but also reduce detail."
@@ -38896,7 +38896,7 @@ function createScreenshotTools() {
           }
           return {
             success: true,
-            message: `Screenshot captured successfully (${result2.width}x${result2.height}).`,
+            message: `Game view screenshot captured successfully (${result2.width}x${result2.height}).`,
             base64: result2.base64,
             width: result2.width,
             height: result2.height
@@ -38910,6 +38910,61 @@ function createScreenshotTools() {
       }, "execute"),
       // Convert the tool result into multi-modal content
       // so the AI SDK sends the image as an actual image.
+      toModelOutput({ output: result2 }) {
+        if (!result2.success || !result2.base64) {
+          return { type: "content", value: [{ type: "text", text: result2.message }] };
+        }
+        return {
+          type: "content",
+          value: [
+            { type: "text", text: result2.message },
+            {
+              type: "file-data",
+              data: result2.base64,
+              mediaType: "image/png"
+            }
+          ]
+        };
+      }
+    }),
+    /**
+     * Capture the Unity Scene view (Editor only).
+     */
+    captureSceneView: tool({
+      description: "Capture a screenshot of the Unity Scene view window (Editor only). Returns a PNG image showing the current Scene view with its camera angle, gizmos, and editor overlays. Use this tool when you need to inspect the scene layout, check object positions/transforms, debug spatial relationships, or analyze the scene from the editor perspective. This is different from captureScreenshot which captures the Game view. The image will be resized to fit within the specified max dimensions.",
+      inputSchema: external_exports.object({
+        maxWidth: external_exports.number().int().min(64).max(1920).default(512).describe(
+          "Maximum width of the captured image in pixels (64-1920, default 512). Lower values reduce token cost but also reduce detail."
+        ),
+        maxHeight: external_exports.number().int().min(64).max(1080).default(512).describe(
+          "Maximum height of the captured image in pixels (64-1080, default 512). Lower values reduce token cost but also reduce detail."
+        )
+      }),
+      execute: /* @__PURE__ */ __name(async ({ maxWidth, maxHeight }) => {
+        try {
+          const resultJson = await captureSceneViewPromise(maxWidth, maxHeight);
+          const result2 = JSON.parse(resultJson);
+          if (!result2.success) {
+            return {
+              success: false,
+              message: `Scene view capture failed: ${result2.error || "Unknown error"}`
+            };
+          }
+          return {
+            success: true,
+            message: `Scene view screenshot captured successfully (${result2.width}x${result2.height}).`,
+            base64: result2.base64,
+            width: result2.width,
+            height: result2.height
+          };
+        } catch (error48) {
+          return {
+            success: false,
+            message: `Scene view capture failed: ${error48.message || error48}`
+          };
+        }
+      }, "execute"),
+      // Same multi-modal output as captureScreenshot
       toModelOutput({ output: result2 }) {
         if (!result2.success || !result2.base64) {
           return { type: "content", value: [{ type: "text", text: result2.message }] };
@@ -38946,6 +39001,22 @@ function captureScreenPromise(maxWidth, maxHeight) {
   });
 }
 __name(captureScreenPromise, "captureScreenPromise");
+function captureSceneViewPromise(maxWidth, maxHeight) {
+  return new Promise((resolve2, reject) => {
+    try {
+      CS.LLMAgent.ScreenCaptureBridge.CaptureSceneViewAsync(
+        maxWidth,
+        maxHeight,
+        (resultJson) => {
+          resolve2(resultJson);
+        }
+      );
+    } catch (error48) {
+      reject(error48);
+    }
+  });
+}
+__name(captureSceneViewPromise, "captureSceneViewPromise");
 
 // src/tools/type-reflection-tool.mts
 function createTypeReflectionTools() {

@@ -337,6 +337,7 @@
         {
             protected [__keep_incompatibility]: never;
             public static CaptureScreenAsync ($maxWidth: number, $maxHeight: number, $callback: System.Action$1<string>) : void
+            public static CaptureSceneViewAsync ($maxWidth: number, $maxHeight: number, $callback: System.Action$1<string>) : void
         }
         class TypeReflectionBridge extends System.Object
         {
