@@ -364,6 +364,40 @@ function compressMessage(msg: any): any {
 }
 
 /**
+ * Check whether a tool result output indicates success.
+ * - If output is an object with a `success` boolean field, use it directly.
+ * - If output is a string containing failure keywords, treat as failure.
+ * - Otherwise assume success.
+ */
+function isToolResultSuccess(output: unknown): boolean {
+    if (output != null && typeof output === 'object' && 'success' in (output as any)) {
+        return !!(output as any).success;
+    }
+    if (typeof output === 'string') {
+        const lower = output.toLowerCase();
+        if (lower.includes('failed') || lower.includes('error')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * Extract an error message from a tool result output.
+ */
+function extractToolErrorMessage(output: unknown): string {
+    if (output != null && typeof output === 'object') {
+        const obj = output as any;
+        if (obj.error) return String(obj.error);
+        if (obj.message) return String(obj.message);
+    }
+    if (typeof output === 'string') {
+        return output.length > 200 ? output.substring(0, 200) + '...' : output;
+    }
+    return 'Unknown error';
+}
+
+/**
  * Compress an array of messages, skipping the last `skipTail` messages.
  * Returns a new array with compressed copies; originals are untouched.
  */
@@ -657,7 +691,7 @@ function buildSystemPrompt(): string {
  * as user-message image parts, because the Chat Completions API
  * converter only JSON.stringifies tool-result content (no image_url).
  */
-export async function sendMessage(userMessage: string, imageBase64?: string, imageMimeType?: string): Promise<string> {
+export async function sendMessage(userMessage: string, imageBase64?: string, imageMimeType?: string, onProgress?: (text: string) => void): Promise<string> {
     if (!isConfigured || !currentConfig.apiKey) {
         return '[Agent] Not configured. Please set API key first via the Settings panel.';
     }
@@ -731,6 +765,34 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
             messages: conversationHistory,
             tools,
             stopWhen: stepCountIs(MAX_STEPS),
+            onStepFinish({ stepNumber, text, toolCalls, toolResults, finishReason }) {
+                if (onProgress) {
+                    let progressText = '';
+                    if (toolResults && toolResults.length > 0) {
+                        for (const tr of toolResults) {
+                            const ok = isToolResultSuccess(tr.output);
+                            if (ok) {
+                                progressText += `<color=#4CAF50>[OK]</color> ${tr.toolName}\n`;
+                            } else {
+                                const errMsg = extractToolErrorMessage(tr.output);
+                                progressText += `<color=#F44336>[FAIL]</color> ${tr.toolName}: ${errMsg}\n`;
+                            }
+                        }
+                    } else if (toolCalls && toolCalls.length > 0) {
+                        // Fallback: if toolResults not available yet, show tool call names
+                        for (const tc of toolCalls) {
+                            progressText += `<color=#FFA726>[CALL]</color> ${tc.toolName}\n`;
+                        }
+                    }
+                    if (text) {
+                        const truncatedText = text.length > 500 ? text.substring(0, 500) + '...' : text;
+                        progressText += truncatedText;
+                    }
+                    if (progressText) {
+                        onProgress(progressText.trim());
+                    }
+                }
+            },
             prepareStep({ messages, stepNumber, steps }) {
                 if (stepNumber === 0) return undefined;
 
@@ -888,7 +950,7 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
  * contains all previous assistant + tool messages) so the agent picks up
  * where it left off.
  */
-export async function continueGeneration(): Promise<string> {
+export async function continueGeneration(onProgress?: (text: string) => void): Promise<string> {
     if (!isConfigured || !currentConfig.apiKey) {
         return '[Agent] Not configured. Please set API key first via the Settings panel.';
     }
@@ -939,6 +1001,33 @@ export async function continueGeneration(): Promise<string> {
             messages: conversationHistory,
             tools,
             stopWhen: stepCountIs(MAX_STEPS),
+            onStepFinish({ stepNumber, text, toolCalls, toolResults, finishReason }) {
+                if (onProgress) {
+                    let progressText = '';
+                    if (toolResults && toolResults.length > 0) {
+                        for (const tr of toolResults) {
+                            const ok = isToolResultSuccess(tr.output);
+                            if (ok) {
+                                progressText += `<color=#4CAF50>[OK]</color> ${tr.toolName}\n`;
+                            } else {
+                                const errMsg = extractToolErrorMessage(tr.output);
+                                progressText += `<color=#F44336>[FAIL]</color> ${tr.toolName}: ${errMsg}\n`;
+                            }
+                        }
+                    } else if (toolCalls && toolCalls.length > 0) {
+                        for (const tc of toolCalls) {
+                            progressText += `<color=#FFA726>[CALL]</color> ${tc.toolName}\n`;
+                        }
+                    }
+                    if (text) {
+                        const truncatedText = text.length > 500 ? text.substring(0, 500) + '...' : text;
+                        progressText += truncatedText;
+                    }
+                    if (progressText) {
+                        onProgress(progressText.trim());
+                    }
+                }
+            },
             prepareStep({ messages, stepNumber, steps }) {
                 if (stepNumber === 0) return undefined;
 

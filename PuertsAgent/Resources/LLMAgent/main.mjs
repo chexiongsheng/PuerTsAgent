@@ -39500,6 +39500,31 @@ function compressMessage(msg) {
   }
 }
 __name(compressMessage, "compressMessage");
+function isToolResultSuccess(output) {
+  if (output != null && typeof output === "object" && "success" in output) {
+    return !!output.success;
+  }
+  if (typeof output === "string") {
+    const lower = output.toLowerCase();
+    if (lower.includes("failed") || lower.includes("error")) {
+      return false;
+    }
+  }
+  return true;
+}
+__name(isToolResultSuccess, "isToolResultSuccess");
+function extractToolErrorMessage(output) {
+  if (output != null && typeof output === "object") {
+    const obj = output;
+    if (obj.error) return String(obj.error);
+    if (obj.message) return String(obj.message);
+  }
+  if (typeof output === "string") {
+    return output.length > 200 ? output.substring(0, 200) + "..." : output;
+  }
+  return "Unknown error";
+}
+__name(extractToolErrorMessage, "extractToolErrorMessage");
 function compressMessages(messages, skipTail = 0) {
   const end = messages.length - skipTail;
   let replaced = 0;
@@ -39681,7 +39706,7 @@ function buildSystemPrompt() {
   return SYSTEM_PROMPT.replace(/\{BIGSTR_PREFIX\}/g, bigStringStore.prefix).replace(/\{IMAGE_PREFIX\}/g, bigStringStore.imagePrefix);
 }
 __name(buildSystemPrompt, "buildSystemPrompt");
-async function sendMessage(userMessage, imageBase64, imageMimeType) {
+async function sendMessage(userMessage, imageBase64, imageMimeType, onProgress) {
   if (!isConfigured || !currentConfig.apiKey) {
     return "[Agent] Not configured. Please set API key first via the Settings panel.";
   }
@@ -39743,6 +39768,36 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
       messages: conversationHistory,
       tools,
       stopWhen: stepCountIs(MAX_STEPS),
+      onStepFinish({ stepNumber, text: text2, toolCalls, toolResults, finishReason }) {
+        if (onProgress) {
+          let progressText = "";
+          if (toolResults && toolResults.length > 0) {
+            for (const tr2 of toolResults) {
+              const ok = isToolResultSuccess(tr2.output);
+              if (ok) {
+                progressText += `<color=#4CAF50>[OK]</color> ${tr2.toolName}
+`;
+              } else {
+                const errMsg = extractToolErrorMessage(tr2.output);
+                progressText += `<color=#F44336>[FAIL]</color> ${tr2.toolName}: ${errMsg}
+`;
+              }
+            }
+          } else if (toolCalls && toolCalls.length > 0) {
+            for (const tc of toolCalls) {
+              progressText += `<color=#FFA726>[CALL]</color> ${tc.toolName}
+`;
+            }
+          }
+          if (text2) {
+            const truncatedText = text2.length > 500 ? text2.substring(0, 500) + "..." : text2;
+            progressText += truncatedText;
+          }
+          if (progressText) {
+            onProgress(progressText.trim());
+          }
+        }
+      },
       prepareStep({ messages, stepNumber, steps }) {
         if (stepNumber === 0) return void 0;
         const { messages: compressed, replaced } = compressMessages(messages, 2);
@@ -39854,7 +39909,7 @@ ${historySummary}`
   }
 }
 __name(sendMessage, "sendMessage");
-async function continueGeneration() {
+async function continueGeneration(onProgress) {
   if (!isConfigured || !currentConfig.apiKey) {
     return "[Agent] Not configured. Please set API key first via the Settings panel.";
   }
@@ -39898,6 +39953,36 @@ async function continueGeneration() {
       messages: conversationHistory,
       tools,
       stopWhen: stepCountIs(MAX_STEPS),
+      onStepFinish({ stepNumber, text: text2, toolCalls, toolResults, finishReason }) {
+        if (onProgress) {
+          let progressText = "";
+          if (toolResults && toolResults.length > 0) {
+            for (const tr2 of toolResults) {
+              const ok = isToolResultSuccess(tr2.output);
+              if (ok) {
+                progressText += `<color=#4CAF50>[OK]</color> ${tr2.toolName}
+`;
+              } else {
+                const errMsg = extractToolErrorMessage(tr2.output);
+                progressText += `<color=#F44336>[FAIL]</color> ${tr2.toolName}: ${errMsg}
+`;
+              }
+            }
+          } else if (toolCalls && toolCalls.length > 0) {
+            for (const tc of toolCalls) {
+              progressText += `<color=#FFA726>[CALL]</color> ${tc.toolName}
+`;
+            }
+          }
+          if (text2) {
+            const truncatedText = text2.length > 500 ? text2.substring(0, 500) + "..." : text2;
+            progressText += truncatedText;
+          }
+          if (progressText) {
+            onProgress(progressText.trim());
+          }
+        }
+      },
       prepareStep({ messages, stepNumber, steps }) {
         if (stepNumber === 0) return void 0;
         const { messages: compressed, replaced } = compressMessages(messages, 2);
@@ -40026,13 +40111,20 @@ function configureAgent(apiKey, baseURL, model) {
   });
 }
 __name(configureAgent, "configureAgent");
-function onMessageReceived(message, imageBase64, imageMimeType, callback) {
+function onMessageReceived(message, imageBase64, imageMimeType, callback, progressCallback) {
   console.log(`[Agent] User said: ${message}${imageBase64 ? " (with image)" : ""}`);
   if (!getIsConfigured()) {
     callback.Invoke("[Agent] Not configured. Please set your API key in Settings.", false);
     return;
   }
-  sendMessage(message, imageBase64 || void 0, imageMimeType || void 0).then((response) => {
+  const onProgress = progressCallback ? (text2) => {
+    try {
+      progressCallback.Invoke(text2);
+    } catch (e2) {
+      console.error(`[Agent] Progress callback error: ${e2}`);
+    }
+  } : void 0;
+  sendMessage(message, imageBase64 || void 0, imageMimeType || void 0, onProgress).then((response) => {
     callback.Invoke(response, false);
   }).catch((error48) => {
     const errorMsg = `[Agent] Error: ${error48.message || String(error48)}`;
@@ -40048,13 +40140,20 @@ function onMessageSync(message) {
   return `[Echo] ${message}`;
 }
 __name(onMessageSync, "onMessageSync");
-function onContinueGeneration(callback) {
+function onContinueGeneration(callback, progressCallback) {
   console.log("[Agent] User requested to continue generation.");
   if (!getIsConfigured()) {
     callback.Invoke("[Agent] Not configured. Please set your API key in Settings.", false);
     return;
   }
-  continueGeneration().then((response) => {
+  const onProgress = progressCallback ? (text2) => {
+    try {
+      progressCallback.Invoke(text2);
+    } catch (e2) {
+      console.error(`[Agent] Progress callback error: ${e2}`);
+    }
+  } : void 0;
+  continueGeneration(onProgress).then((response) => {
     callback.Invoke(response, false);
   }).catch((error48) => {
     const errorMsg = `[Agent] Error: ${error48.message || String(error48)}`;

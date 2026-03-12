@@ -90,6 +90,17 @@ namespace LLMAgent.Editor
         private const string STEP_LIMIT_PREFIX = "[STEP_LIMIT_REACHED]";
         private const string ERROR_PREFIX = "[Agent] Error:";
 
+        /// <summary>
+        /// Index of the in-progress agent bubble that receives live updates.
+        /// -1 means no active progress bubble.
+        /// </summary>
+        private int progressBubbleIndex = -1;
+
+        /// <summary>
+        /// Accumulated progress text fragments, separated by section dividers.
+        /// </summary>
+        private readonly List<string> progressFragments = new List<string>();
+
         [MenuItem("Puerts Agent/New Chat Window")]
         public static void ShowWindow()
         {
@@ -759,6 +770,10 @@ namespace LLMAgent.Editor
                     // Start continuation
                     isWaitingForResponse = true;
                     shouldScrollToBottom = true;
+
+                    // Create in-progress agent bubble
+                    BeginProgressBubble();
+
                     Repaint();
 
                     scriptManager.ContinueGenerationAsync((response, isError) =>
@@ -774,20 +789,8 @@ namespace LLMAgent.Editor
                             displayText = "(The agent has been working on your request...)";
                         }
 
-                        messages.Add(new ChatMessage
-                        {
-                            Text = displayText,
-                            IsUser = false,
-                            Timestamp = DateTime.Now.ToString("HH:mm"),
-                            ShowContinueButton = hitStepLimit,
-                            ShowRetryButton = isActualError,
-                            RetryIsContinue = isActualError,
-                            RetryUserMessage = null,
-                            RetryImagePath = null
-                        });
-                        shouldScrollToBottom = true;
-                        Repaint();
-                    });
+                        FinalizeProgressBubble(displayText, hitStepLimit, isActualError, isActualError, null, null);
+                    }, OnProgressUpdate);
                 }
 
                 GUI.backgroundColor = originalBg;
@@ -828,6 +831,10 @@ namespace LLMAgent.Editor
                     // Start retry
                     isWaitingForResponse = true;
                     shouldScrollToBottom = true;
+
+                    // Create in-progress agent bubble
+                    BeginProgressBubble();
+
                     Repaint();
 
                     if (isContinue)
@@ -846,20 +853,8 @@ namespace LLMAgent.Editor
                                 retryDisplayText = "(The agent has been working on your request...)";
                             }
 
-                            messages.Add(new ChatMessage
-                            {
-                                Text = retryDisplayText,
-                                IsUser = false,
-                                Timestamp = DateTime.Now.ToString("HH:mm"),
-                                ShowContinueButton = hitStepLimit,
-                                ShowRetryButton = isActualError,
-                                RetryIsContinue = isActualError,
-                                RetryUserMessage = null,
-                                RetryImagePath = null
-                            });
-                            shouldScrollToBottom = true;
-                            Repaint();
-                        });
+                            FinalizeProgressBubble(retryDisplayText, hitStepLimit, isActualError, isActualError, null, null);
+                        }, OnProgressUpdate);
                     }
                     else
                     {
@@ -877,20 +872,10 @@ namespace LLMAgent.Editor
                                 retryDisplayText = "(The agent has been working on your request...)";
                             }
 
-                            messages.Add(new ChatMessage
-                            {
-                                Text = retryDisplayText,
-                                IsUser = false,
-                                Timestamp = DateTime.Now.ToString("HH:mm"),
-                                ShowContinueButton = hitStepLimit,
-                                ShowRetryButton = isActualError,
-                                RetryIsContinue = false,
-                                RetryUserMessage = isActualError ? retryMessage : null,
-                                RetryImagePath = isActualError ? retryImagePath : null
-                            });
-                            shouldScrollToBottom = true;
-                            Repaint();
-                        });
+                            FinalizeProgressBubble(retryDisplayText, hitStepLimit, isActualError, false,
+                                isActualError ? retryMessage : null,
+                                isActualError ? retryImagePath : null);
+                        }, OnProgressUpdate);
                     }
                 }
 
@@ -1171,6 +1156,10 @@ namespace LLMAgent.Editor
             {
                 isWaitingForResponse = true;
                 shouldScrollToBottom = true;
+
+                // Create in-progress agent bubble
+                BeginProgressBubble();
+
                 Repaint();
 
                 scriptManager.SendMessageAsync(text, imagePath, (response, isError) =>
@@ -1188,20 +1177,11 @@ namespace LLMAgent.Editor
                         displayText = "(The agent has been working on your request...)";
                     }
 
-                    messages.Add(new ChatMessage
-                    {
-                        Text = displayText,
-                        IsUser = false,
-                        Timestamp = DateTime.Now.ToString("HH:mm"),
-                        ShowContinueButton = hitStepLimit,
-                        ShowRetryButton = isActualError,
-                        RetryIsContinue = false,
-                        RetryUserMessage = isActualError ? text : null,
-                        RetryImagePath = isActualError ? imagePath : null
-                    });
-                    shouldScrollToBottom = true;
-                    Repaint();
-                });
+                    // Finalize the progress bubble with the final response
+                    FinalizeProgressBubble(displayText, hitStepLimit, isActualError, false,
+                        isActualError ? text : null,
+                        isActualError ? imagePath : null);
+                }, OnProgressUpdate);
             }
             else
             {
@@ -1213,6 +1193,101 @@ namespace LLMAgent.Editor
                 });
                 shouldScrollToBottom = true;
             }
+        }
+
+        #endregion
+
+        #region Progress Bubble Helpers
+
+        /// <summary>
+        /// Create a new in-progress agent bubble and start tracking it.
+        /// </summary>
+        private void BeginProgressBubble()
+        {
+            progressFragments.Clear();
+            messages.Add(new ChatMessage
+            {
+                Text = "\u23F3 Working...",
+                IsUser = false,
+                Timestamp = DateTime.Now.ToString("HH:mm")
+            });
+            progressBubbleIndex = messages.Count - 1;
+        }
+
+        /// <summary>
+        /// Called by TS progress callback to append step info to the in-progress bubble.
+        /// </summary>
+        private void OnProgressUpdate(string progressText)
+        {
+            if (progressBubbleIndex < 0 || progressBubbleIndex >= messages.Count)
+                return;
+
+            progressFragments.Add(progressText);
+
+            // Rebuild the bubble text from accumulated fragments
+            var updated = messages[progressBubbleIndex];
+            updated.Text = string.Join("\n---\n", progressFragments) + "\n\n\u23F3 Working...";
+            messages[progressBubbleIndex] = updated;
+            shouldScrollToBottom = true;
+            Repaint();
+        }
+
+        /// <summary>
+        /// Finalize the in-progress bubble with the final response.
+        /// </summary>
+        private void FinalizeProgressBubble(string finalText, bool hitStepLimit, bool isError,
+            bool retryIsContinue, string retryUserMessage, string retryImagePath)
+        {
+            // Build the final display: progress fragments + separator + final text
+            string combinedText;
+            if (progressFragments.Count > 0)
+            {
+                string progressPart = string.Join("\n---\n", progressFragments);
+                if (!string.IsNullOrWhiteSpace(finalText))
+                {
+                    combinedText = progressPart + "\n\n" + finalText;
+                }
+                else
+                {
+                    combinedText = progressPart;
+                }
+            }
+            else
+            {
+                combinedText = finalText;
+            }
+
+            if (progressBubbleIndex >= 0 && progressBubbleIndex < messages.Count)
+            {
+                var updated = messages[progressBubbleIndex];
+                updated.Text = combinedText;
+                updated.ShowContinueButton = hitStepLimit;
+                updated.ShowRetryButton = isError;
+                updated.RetryIsContinue = retryIsContinue;
+                updated.RetryUserMessage = retryUserMessage;
+                updated.RetryImagePath = retryImagePath;
+                messages[progressBubbleIndex] = updated;
+            }
+            else
+            {
+                // Fallback: just add a new message
+                messages.Add(new ChatMessage
+                {
+                    Text = combinedText,
+                    IsUser = false,
+                    Timestamp = DateTime.Now.ToString("HH:mm"),
+                    ShowContinueButton = hitStepLimit,
+                    ShowRetryButton = isError,
+                    RetryIsContinue = retryIsContinue,
+                    RetryUserMessage = retryUserMessage,
+                    RetryImagePath = retryImagePath
+                });
+            }
+
+            progressBubbleIndex = -1;
+            progressFragments.Clear();
+            shouldScrollToBottom = true;
+            Repaint();
         }
 
         #endregion

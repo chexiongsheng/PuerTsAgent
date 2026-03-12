@@ -22,8 +22,8 @@ namespace LLMAgent
 
         // TS function delegates
         private Func<string, string, string, string> configureAgent;
-        private Action<string, string, string, Action<string, bool>> onMessageReceived;
-        private Action<Action<string, bool>> onContinueGeneration;
+        private Action<string, string, string, Action<string, bool>, Action<string>> onMessageReceived;
+        private Action<Action<string, bool>, Action<string>> onContinueGeneration;
         private Func<string, string> onMessageSync;
         private Action onClearHistory;
         private Func<int> onGetHistoryLength;
@@ -75,8 +75,8 @@ namespace LLMAgent
 
                 // Get exported functions from TS module
                 configureAgent = moduleExports.Get<Func<string, string, string, string>>("configureAgent");
-                onMessageReceived = moduleExports.Get<Action<string, string, string, Action<string, bool>>>("onMessageReceived");
-                onContinueGeneration = moduleExports.Get<Action<Action<string, bool>>>("onContinueGeneration");
+                onMessageReceived = moduleExports.Get<Action<string, string, string, Action<string, bool>, Action<string>>>("onMessageReceived");
+                onContinueGeneration = moduleExports.Get<Action<Action<string, bool>, Action<string>>>("onContinueGeneration");
                 onMessageSync = moduleExports.Get<Func<string, string>>("onMessageSync");
                 onClearHistory = moduleExports.Get<Action>("onClearHistory");
                 onGetHistoryLength = moduleExports.Get<Func<int>>("onGetHistoryLength");
@@ -185,7 +185,7 @@ namespace LLMAgent
         /// Send a message to the TS side asynchronously via callback pattern.
         /// Optionally includes an image file path to attach.
         /// </summary>
-        public void SendMessageAsync(string message, string imagePath, Action<string, bool> onResponse)
+        public void SendMessageAsync(string message, string imagePath, Action<string, bool> onResponse, Action<string> onProgress = null)
         {
             if (!isInitialized || onMessageReceived == null)
             {
@@ -222,6 +222,9 @@ namespace LLMAgent
                 onMessageReceived(message, imageBase64, mimeType, (response, isError) =>
                 {
                     onResponse?.Invoke(response, isError);
+                }, (progressText) =>
+                {
+                    onProgress?.Invoke(progressText);
                 });
             }
             catch (Exception ex)
@@ -235,7 +238,7 @@ namespace LLMAgent
         /// <summary>
         /// Continue generation after the step limit was reached.
         /// </summary>
-        public void ContinueGenerationAsync(Action<string, bool> onResponse)
+        public void ContinueGenerationAsync(Action<string, bool> onResponse, Action<string> onProgress = null)
         {
             if (!isInitialized || onContinueGeneration == null)
             {
@@ -248,6 +251,9 @@ namespace LLMAgent
                 onContinueGeneration((response, isError) =>
                 {
                     onResponse?.Invoke(response, isError);
+                }, (progressText) =>
+                {
+                    onProgress?.Invoke(progressText);
                 });
             }
             catch (Exception ex)

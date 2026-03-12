@@ -45,7 +45,7 @@ export function configureAgent(
  * @param message - User input text
  * @param callback - C# Action<string, bool> callback to invoke with (response, isError)
  */
-export function onMessageReceived(message: string, imageBase64: string, imageMimeType: string, callback: CS.System.Action$2<string, boolean>): void {
+export function onMessageReceived(message: string, imageBase64: string, imageMimeType: string, callback: CS.System.Action$2<string, boolean>, progressCallback?: CS.System.Action$1<string>): void {
     console.log(`[Agent] User said: ${message}${imageBase64 ? ' (with image)' : ''}`);
 
     if (!getIsConfigured()) {
@@ -54,8 +54,17 @@ export function onMessageReceived(message: string, imageBase64: string, imageMim
         return;
     }
 
+    // Build progress handler from C# callback
+    const onProgress = progressCallback ? (text: string) => {
+        try {
+            progressCallback.Invoke!(text);
+        } catch (e) {
+            console.error(`[Agent] Progress callback error: ${e}`);
+        }
+    } : undefined;
+
     // Fire and forget - the async operation will call back when done
-    sendMessage(message, imageBase64 || undefined, imageMimeType || undefined)
+    sendMessage(message, imageBase64 || undefined, imageMimeType || undefined, onProgress)
         .then((response: string) => {
             callback.Invoke!(response, false);
         })
@@ -81,7 +90,7 @@ export function onMessageSync(message: string): string {
  * Continue generation after hitting the step limit.
  * C# passes an Action<string, bool> callback, same pattern as onMessageReceived.
  */
-export function onContinueGeneration(callback: CS.System.Action$2<string, boolean>): void {
+export function onContinueGeneration(callback: CS.System.Action$2<string, boolean>, progressCallback?: CS.System.Action$1<string>): void {
     console.log('[Agent] User requested to continue generation.');
 
     if (!getIsConfigured()) {
@@ -89,7 +98,16 @@ export function onContinueGeneration(callback: CS.System.Action$2<string, boolea
         return;
     }
 
-    continueGeneration()
+    // Build progress handler from C# callback
+    const onProgress = progressCallback ? (text: string) => {
+        try {
+            progressCallback.Invoke!(text);
+        } catch (e) {
+            console.error(`[Agent] Progress callback error: ${e}`);
+        }
+    } : undefined;
+
+    continueGeneration(onProgress)
         .then((response: string) => {
             callback.Invoke!(response, false);
         })
