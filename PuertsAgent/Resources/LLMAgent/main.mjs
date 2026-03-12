@@ -5228,8 +5228,8 @@ async function fetchImpl(input, init) {
         body || "",
         (responseJson) => {
           try {
-            console.log(`[Polyfill] response: ${responseJson}`);
             const responseData = JSON.parse(responseJson);
+            console.log(`[Polyfill] response: ${responseData.body}`);
             const responseHeaders = new FetchHeaders(responseData.headers || {});
             resolve2(new FetchResponse(
               responseData.body || "",
@@ -39129,6 +39129,7 @@ var BigStringStore = class {
 };
 var bigStringStore = new BigStringStore();
 var BIG_STRING_THRESHOLD = 500;
+var ENABLE_SLIDING_WINDOW = true;
 var CHARS_PER_TOKEN = 4;
 var MAX_INPUT_TOKENS = 6e5;
 var MIN_KEEP_MESSAGES = 6;
@@ -39488,7 +39489,7 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
     return "[Agent] Not configured. Please set API key first via the Settings panel.";
   }
   compressHistoryMessages();
-  {
+  if (ENABLE_SLIDING_WINDOW) {
     const estimated = estimateTokens(conversationHistory);
     if (estimated > MAX_INPUT_TOKENS) {
       const { messages: trimmed, trimmed: didTrim } = await trimMessagesByTokenBudget(
@@ -39551,25 +39552,12 @@ async function sendMessage(userMessage, imageBase64, imageMimeType) {
         if (replaced > 0) {
           console.log(`[Agent] prepareStep(${stepNumber}): compressed ${replaced} big strings (store size: ${bigStringStore.size})`);
         }
-        const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
-        const lastInputTokens = lastStep?.usage?.inputTokens;
-        if (lastInputTokens && lastInputTokens > MAX_INPUT_TOKENS) {
-          console.log(`[Agent] prepareStep(${stepNumber}): last step used ${lastInputTokens} input tokens, exceeds ${MAX_INPUT_TOKENS}, trimming...`);
-          const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
-          const trimmedMsgs = newMessages.slice(newMessages.length - keep);
-          if (historySummary) {
-            trimmedMsgs.unshift({
-              role: "user",
-              content: `[Context Summary - the following is a summary of earlier conversation that was trimmed to save context space]:
-${historySummary}`
-            });
-          }
-          newMessages = trimmedMsgs;
-          console.log(`[Agent] prepareStep(${stepNumber}): trimmed to ${newMessages.length} messages`);
+        if (!ENABLE_SLIDING_WINDOW) {
         } else {
-          const estimatedTokens = estimateTokens(newMessages);
-          if (estimatedTokens > MAX_INPUT_TOKENS) {
-            console.log(`[Agent] prepareStep(${stepNumber}): estimated ${estimatedTokens} tokens, exceeds ${MAX_INPUT_TOKENS}, trimming...`);
+          const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
+          const lastInputTokens = lastStep?.usage?.inputTokens;
+          if (lastInputTokens && lastInputTokens > MAX_INPUT_TOKENS) {
+            console.log(`[Agent] prepareStep(${stepNumber}): last step used ${lastInputTokens} input tokens, exceeds ${MAX_INPUT_TOKENS}, trimming...`);
             const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
             const trimmedMsgs = newMessages.slice(newMessages.length - keep);
             if (historySummary) {
@@ -39581,6 +39569,22 @@ ${historySummary}`
             }
             newMessages = trimmedMsgs;
             console.log(`[Agent] prepareStep(${stepNumber}): trimmed to ${newMessages.length} messages`);
+          } else {
+            const estimatedTokens = estimateTokens(newMessages);
+            if (estimatedTokens > MAX_INPUT_TOKENS) {
+              console.log(`[Agent] prepareStep(${stepNumber}): estimated ${estimatedTokens} tokens, exceeds ${MAX_INPUT_TOKENS}, trimming...`);
+              const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
+              const trimmedMsgs = newMessages.slice(newMessages.length - keep);
+              if (historySummary) {
+                trimmedMsgs.unshift({
+                  role: "user",
+                  content: `[Context Summary - the following is a summary of earlier conversation that was trimmed to save context space]:
+${historySummary}`
+                });
+              }
+              newMessages = trimmedMsgs;
+              console.log(`[Agent] prepareStep(${stepNumber}): trimmed to ${newMessages.length} messages`);
+            }
           }
         }
         const lastMsg = newMessages[newMessages.length - 1];

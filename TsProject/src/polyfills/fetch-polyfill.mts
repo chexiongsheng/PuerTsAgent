@@ -239,8 +239,8 @@ async function fetchImpl(
                 body || '',
                 (responseJson: string) => {
                     try {
-                        console.log(`[Polyfill] response: ${responseJson}`);
                         const responseData = JSON.parse(responseJson);
+                        console.log(`[Polyfill] response: ${responseData.body}`);
 
                         const responseHeaders = new FetchHeaders(responseData.headers || {});
 
