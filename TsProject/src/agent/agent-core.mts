@@ -259,6 +259,10 @@ You are running in a PuerTS environment. Below are the rules for interacting bet
 ### Important Notes
 - The \`CS\` global object is always available in the PuerTS JS environment for accessing any C# type.
 - The \`puer\` global object provides PuerTS helper APIs: \`$ref\`, \`$unref\`, \`$generic\`, \`$typeof\`, \`$promise\`.
+
+## Unity Edit Mode Detection
+
+Before using runtime-only APIs (e.g. \`Destroy\`, \`MeshFilter.mesh\`, coroutines), first check \`CS.UnityEngine.Application.isPlaying\` via \`evalJsCode\` and use edit-mode-safe alternatives when needed (e.g. \`DestroyImmediate\`, \`sharedMesh\`).
 `;
 
 // Default configuration (system prompt is NOT part of the config — it is managed by TS only)
@@ -318,6 +322,14 @@ function replaceImageStringsInPlace(obj: any, parentKey: string = ''): boolean {
     }
 
     if (typeof obj === 'object') {
+        // Skip AI SDK image content parts ({ type: 'image', image: <base64> }).
+        // These are sent directly via the API's image_url mechanism and must
+        // remain valid base64.  They will be handled separately by
+        // stripOldUserImages() which removes them from older user messages.
+        if (obj.type === 'image' && typeof obj.image === 'string') {
+            return false;
+        }
+
         let changed = false;
         for (const key of Object.keys(obj)) {
             const val = obj[key];
@@ -849,10 +861,56 @@ function handlePrepareStep({ messages, stepNumber, steps }: any): any {
 }
 
 /**
+ * Strip image parts from older user messages in conversationHistory.
+ * The most recent user message with images is preserved (it may be
+ * the current turn or a very recent reference).  Older ones have their
+ * `{ type: 'image' }` content parts replaced with a text note so the
+ * API doesn't receive stale (and large) base64 data.
+ */
+function stripOldUserImages(): void {
+    // Find all user-message indices that contain image parts
+    const indicesWithImages: number[] = [];
+    for (let i = 0; i < conversationHistory.length; i++) {
+        const msg = conversationHistory[i] as any;
+        if (msg.role !== 'user' || !Array.isArray(msg.content)) continue;
+        if (msg.content.some((p: any) => p.type === 'image')) {
+            indicesWithImages.push(i);
+        }
+    }
+
+    // Keep the latest one intact, strip images from the rest
+    if (indicesWithImages.length <= 1) return;
+
+    const toStrip = indicesWithImages.slice(0, -1);
+    for (const idx of toStrip) {
+        const msg = conversationHistory[idx] as any;
+        let strippedCount = 0;
+        msg.content = msg.content.map((part: any) => {
+            if (part.type === 'image' && typeof part.image === 'string') {
+                strippedCount++;
+                // Store the base64 data into imageStore so AI can retrieve it via retrieveImage tool
+                const base64Data = part.image;
+                const storeIdx = imageStore.store(base64Data);
+                const placeholder = imageStore.placeholder(storeIdx, base64Data.length);
+                return {
+                    type: 'text' as const,
+                    text: `[User-attached image was removed to save context space. Placeholder: ${placeholder} – use retrieveImage tool with index ${storeIdx} if you need to see it again.]`,
+                };
+            }
+            return part;
+        });
+        if (strippedCount > 0) {
+            console.log(`[Agent] Stripped ${strippedCount} image(s) from older user message at index ${idx}, stored in imageStore`);
+        }
+    }
+}
+
+/**
  * Compress history and apply sliding-window trimming.
  * Shared pre-processing for both sendMessage and continueGeneration.
  */
 async function prepareHistory(): Promise<void> {
+    stripOldUserImages();
     compressHistoryMessages();
 
     if (ENABLE_SLIDING_WINDOW) {

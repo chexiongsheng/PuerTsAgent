@@ -39431,6 +39431,10 @@ You are running in a PuerTS environment. Below are the rules for interacting bet
 ### Important Notes
 - The \`CS\` global object is always available in the PuerTS JS environment for accessing any C# type.
 - The \`puer\` global object provides PuerTS helper APIs: \`$ref\`, \`$unref\`, \`$generic\`, \`$typeof\`, \`$promise\`.
+
+## Unity Edit Mode Detection
+
+Before using runtime-only APIs (e.g. \`Destroy\`, \`MeshFilter.mesh\`, coroutines), first check \`CS.UnityEngine.Application.isPlaying\` via \`evalJsCode\` and use edit-mode-safe alternatives when needed (e.g. \`DestroyImmediate\`, \`sharedMesh\`).
 `;
 var DEFAULT_CONFIG = {
   apiKey: "",
@@ -39463,6 +39467,9 @@ function replaceImageStringsInPlace(obj, parentKey = "") {
     return changed;
   }
   if (typeof obj === "object") {
+    if (obj.type === "image" && typeof obj.image === "string") {
+      return false;
+    }
     let changed = false;
     for (const key of Object.keys(obj)) {
       const val = obj[key];
@@ -39829,7 +39836,41 @@ ${historySummary}`
   return { messages: newMessages };
 }
 __name(handlePrepareStep, "handlePrepareStep");
+function stripOldUserImages() {
+  const indicesWithImages = [];
+  for (let i2 = 0; i2 < conversationHistory.length; i2++) {
+    const msg = conversationHistory[i2];
+    if (msg.role !== "user" || !Array.isArray(msg.content)) continue;
+    if (msg.content.some((p2) => p2.type === "image")) {
+      indicesWithImages.push(i2);
+    }
+  }
+  if (indicesWithImages.length <= 1) return;
+  const toStrip = indicesWithImages.slice(0, -1);
+  for (const idx of toStrip) {
+    const msg = conversationHistory[idx];
+    let strippedCount = 0;
+    msg.content = msg.content.map((part) => {
+      if (part.type === "image" && typeof part.image === "string") {
+        strippedCount++;
+        const base64Data = part.image;
+        const storeIdx = imageStore.store(base64Data);
+        const placeholder = imageStore.placeholder(storeIdx, base64Data.length);
+        return {
+          type: "text",
+          text: `[User-attached image was removed to save context space. Placeholder: ${placeholder} \u2013 use retrieveImage tool with index ${storeIdx} if you need to see it again.]`
+        };
+      }
+      return part;
+    });
+    if (strippedCount > 0) {
+      console.log(`[Agent] Stripped ${strippedCount} image(s) from older user message at index ${idx}, stored in imageStore`);
+    }
+  }
+}
+__name(stripOldUserImages, "stripOldUserImages");
 async function prepareHistory() {
+  stripOldUserImages();
   compressHistoryMessages();
   if (ENABLE_SLIDING_WINDOW) {
     const estimated = estimateTokens(conversationHistory);
