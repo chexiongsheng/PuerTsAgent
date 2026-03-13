@@ -39194,33 +39194,8 @@ __name(createTypeReflectionTools, "createTypeReflectionTools");
 
 // src/tools/eval-tool.mts
 var jsEnv = null;
-function createEvalTools() {
-  return {
-    /**
-     * Evaluate JavaScript code in the PuerTS runtime environment.
-     */
-    evalJsCode: tool({
-      description: 'Execute JavaScript code in a dedicated PuerTS runtime environment. This VM is separate from the main agent VM but is **reused across calls** \u2014 variables, functions, and state defined in previous calls persist and can be referenced in later calls.\n\nThe code runs inside Unity via PuerTS with full access to the `CS` and `puer` globals (see PuerTS interop rules in the system prompt).\n\nUse this tool when you need to inspect or modify Unity scene objects, create/destroy GameObjects or Components, query hierarchies, execute Unity API calls dynamically, or test code snippets in the live environment.\n\nThe code is wrapped in an async context, so you can use `await`. Use `return <value>` to pass a result back \u2014 the returned value will appear in the `result` field of the response. If no `return` statement is used, `result` will be "(no return value)". Objects are serialized via JSON.stringify; primitives are converted to strings.\n\nOn success the response is `{ success: true, result: string }`. On failure the response is `{ success: false, error: string, stack: string }`.\n\nUse console.log() for debug output (it goes to the Unity console).',
-      inputSchema: external_exports.object({
-        code: external_exports.string().describe(
-          "The JavaScript code to execute. Can include multiple statements. Use `return <expr>` to send a value back as the result. Example: \"const go = CS.UnityEngine.GameObject.Find('Main Camera'); return go.transform.position.toString()\""
-        )
-      }),
-      execute: /* @__PURE__ */ __name(async ({ code }) => {
-        try {
-          if (!jsEnv) {
-            jsEnv = CS.LLMAgent.ScriptEnvBridge.CreateJavaScriptEnv();
-          }
-          console.log(`[EvalJsTool] Executing code:
-${code}`);
-          const wrappedCode = `(function(onFinish) {
-    (async () => {
-        try {
-            ${code}
-        } catch(e) {
-            onFinish.Invoke(JSON.stringify({ __error: true, message: String(e.message || e), stack: String(e.stack || '') }));
-        }
-    })().then(function(result) {
+var RUNNER_CODE = `(function(onFinish) {
+    execute().then(function(result) {
         var resultStr;
         if (result === undefined) {
             resultStr = '(no return value)';
@@ -39236,8 +39211,36 @@ ${code}`);
         onFinish.Invoke(JSON.stringify({ __error: true, message: String(err.message || err), stack: String(err.stack || '') }));
     });
 })`;
+function createEvalTools() {
+  return {
+    /**
+     * Evaluate JavaScript code in the PuerTS runtime environment.
+     */
+    evalJsCode: tool({
+      description: 'Execute JavaScript code in a dedicated PuerTS runtime environment. This VM is separate from the main agent VM but is **reused across calls** \u2014 variables, functions, and state defined in previous calls persist and can be referenced in later calls.\n\nThe code runs inside Unity via PuerTS with full access to the `CS` and `puer` globals (see PuerTS interop rules and runtime environment notes in the system prompt).\n\nUse this tool when you need to inspect or modify Unity scene objects, create/destroy GameObjects or Components, query hierarchies, execute Unity API calls dynamically, or test code snippets in the live environment.\n\n**Code format**: Your code MUST be an async function declaration named `execute`, for example:\n```\nasync function execute() {\n    // your logic here\n    return someValue;\n}\n```\nUse `return <value>` inside the function to pass a result back \u2014 the returned value will appear in the `result` field of the response. If no `return` statement is used, `result` will be "(no return value)". Objects are serialized via JSON.stringify; primitives are converted to strings.\n\nOn success the response is `{ success: true, result: string }`. On failure the response is `{ success: false, error: string, stack: string }`.\n\nUse console.log() for debug output (it goes to the Unity console).',
+      inputSchema: external_exports.object({
+        code: external_exports.string().describe(
+          "An async function declaration named `execute`. Example: \"async function execute() {\\n  const go = CS.UnityEngine.GameObject.Find('Main Camera');\\n  return go.transform.position.toString();\\n}\""
+        )
+      }),
+      execute: /* @__PURE__ */ __name(async ({ code }) => {
+        try {
+          if (!jsEnv) {
+            jsEnv = CS.LLMAgent.ScriptEnvBridge.CreateJavaScriptEnv();
+          }
+          console.log(`[EvalJsTool] Executing code:
+${code}`);
+          try {
+            CS.LLMAgent.ScriptEnvBridge.EvalSync(jsEnv, code);
+          } catch (defineError) {
+            return {
+              success: false,
+              error: defineError.message || String(defineError),
+              stack: defineError.stack || ""
+            };
+          }
           const resultJson = await new Promise((resolve2) => {
-            CS.LLMAgent.ScriptEnvBridge.Eval(jsEnv, wrappedCode, resolve2);
+            CS.LLMAgent.ScriptEnvBridge.Eval(jsEnv, RUNNER_CODE, resolve2);
           });
           const parsed = JSON.parse(resultJson);
           if (parsed.__error) {
@@ -39431,6 +39434,10 @@ You are running in a PuerTS environment. Below are the rules for interacting bet
 ### Important Notes
 - The \`CS\` global object is always available in the PuerTS JS environment for accessing any C# type.
 - The \`puer\` global object provides PuerTS helper APIs: \`$ref\`, \`$unref\`, \`$generic\`, \`$typeof\`, \`$promise\`.
+
+## evalJsCode Runtime Environment
+
+The evalJsCode tool runs in a **pure V8 engine** \u2014 there is NO \`window\`, \`document\`, \`DOM\`, or any browser/Node.js API. However, \`setTimeout\`, \`setInterval\`, \`clearTimeout\`, and \`clearInterval\` are available (provided by PuerTS). To persist state across calls, use \`globalThis.myVar = ...\` or top-level \`var\` declarations.
 
 ## Unity Edit Mode Detection
 

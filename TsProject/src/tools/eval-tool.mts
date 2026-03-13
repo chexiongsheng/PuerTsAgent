@@ -43,7 +43,7 @@ export function createEvalTools() {
                 'This VM is separate from the main agent VM but is **reused across calls** — ' +
                 'variables, functions, and state defined in previous calls persist and can be referenced in later calls.\n\n' +
                 'The code runs inside Unity via PuerTS with full access to the `CS` and `puer` globals ' +
-                '(see PuerTS interop rules in the system prompt).\n\n' +
+                '(see PuerTS interop rules and runtime environment notes in the system prompt).\n\n' +
                 'Use this tool when you need to inspect or modify Unity scene objects, ' +
                 'create/destroy GameObjects or Components, query hierarchies, ' +
                 'execute Unity API calls dynamically, or test code snippets in the live environment.\n\n' +
