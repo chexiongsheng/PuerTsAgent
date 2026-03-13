@@ -9,6 +9,26 @@ import { z } from 'zod';
 
 var jsEnv: CS.Puerts.ScriptEnv = null as never;
 
+// Fixed runner code that calls the globally defined execute() function,
+// handles async result serialization and error reporting via onFinish callback.
+const RUNNER_CODE = `(function(onFinish) {
+    execute().then(function(result) {
+        var resultStr;
+        if (result === undefined) {
+            resultStr = '(no return value)';
+        } else if (result === null) {
+            resultStr = 'null';
+        } else if (typeof result === 'object') {
+            try { resultStr = JSON.stringify(result, null, 2); } catch(e) { resultStr = String(result); }
+        } else {
+            resultStr = String(result);
+        }
+        onFinish.Invoke(JSON.stringify({ __error: false, result: resultStr }));
+    }).catch(function(err) {
+        onFinish.Invoke(JSON.stringify({ __error: true, message: String(err.message || err), stack: String(err.stack || '') }));
+    });
+})`;
+
 /**
  * Create eval tools that the agent can use to execute JS code at runtime.
  */
@@ -27,8 +47,9 @@ export function createEvalTools() {
                 'Use this tool when you need to inspect or modify Unity scene objects, ' +
                 'create/destroy GameObjects or Components, query hierarchies, ' +
                 'execute Unity API calls dynamically, or test code snippets in the live environment.\n\n' +
-                'The code is wrapped in an async context, so you can use `await`. ' +
-                'Use `return <value>` to pass a result back — the returned value will appear in the `result` field of the response. ' +
+                '**Code format**: Your code MUST be an async function declaration named `execute`, for example:\n' +
+                '```\nasync function execute() {\n    // your logic here\n    return someValue;\n}\n```\n' +
+                'Use `return <value>` inside the function to pass a result back — the returned value will appear in the `result` field of the response. ' +
                 'If no `return` statement is used, `result` will be "(no return value)". ' +
                 'Objects are serialized via JSON.stringify; primitives are converted to strings.\n\n' +
                 'On success the response is `{ success: true, result: string }`. ' +
@@ -38,9 +59,8 @@ export function createEvalTools() {
                 code: z
                     .string()
                     .describe(
-                        'The JavaScript code to execute. Can include multiple statements. ' +
-                        'Use `return <expr>` to send a value back as the result. ' +
-                        'Example: "const go = CS.UnityEngine.GameObject.Find(\'Main Camera\'); return go.transform.position.toString()"'
+                        'An async function declaration named `execute`. ' +
+                        'Example: "async function execute() {\\n  const go = CS.UnityEngine.GameObject.Find(\'Main Camera\');\\n  return go.transform.position.toString();\\n}"'
                     ),
             }),
             execute: async ({ code }) => {
@@ -50,37 +70,24 @@ export function createEvalTools() {
                     }
                     console.log(`[EvalJsTool] Executing code:\n${code}`);
 
-                    // Wrap user code into a script that ScriptEnvBridge.Eval expects:
-                    // The script must evaluate to a function that accepts an onFinish callback.
-                    // We use an async IIFE inside so that `await` works, then serialize the result
-                    // and pass it back via onFinish(resultString).
-                    const wrappedCode = `(function(onFinish) {
-    (async () => {
-        try {
-            ${code}
-        } catch(e) {
-            onFinish.Invoke(JSON.stringify({ __error: true, message: String(e.message || e), stack: String(e.stack || '') }));
-        }
-    })().then(function(result) {
-        var resultStr;
-        if (result === undefined) {
-            resultStr = '(no return value)';
-        } else if (result === null) {
-            resultStr = 'null';
-        } else if (typeof result === 'object') {
-            try { resultStr = JSON.stringify(result, null, 2); } catch(e) { resultStr = String(result); }
-        } else {
-            resultStr = String(result);
-        }
-        onFinish.Invoke(JSON.stringify({ __error: false, result: resultStr }));
-    }).catch(function(err) {
-        onFinish.Invoke(JSON.stringify({ __error: true, message: String(err.message || err), stack: String(err.stack || '') }));
-    });
-})`;
+                    // Step 1: Define the execute() function via EvalSync.
+                    // The user code is eval'd as-is, so error line/column numbers
+                    // correspond exactly to the code the AI wrote.
+                    try {
+                        CS.LLMAgent.ScriptEnvBridge.EvalSync(jsEnv, code);
+                    } catch (defineError: any) {
+                        // Syntax error or top-level error in the function definition
+                        return {
+                            success: false,
+                            error: defineError.message || String(defineError),
+                            stack: defineError.stack || '',
+                        };
+                    }
 
-                    // Execute in the isolated ScriptEnv VM via C# bridge
+                    // Step 2: Run the fixed runner that calls execute() and
+                    // serialises the result / error back through onFinish.
                     const resultJson = await new Promise<string>((resolve) => {
-                        CS.LLMAgent.ScriptEnvBridge.Eval(jsEnv, wrappedCode, resolve);
+                        CS.LLMAgent.ScriptEnvBridge.Eval(jsEnv, RUNNER_CODE, resolve);
                     });
 
                     const parsed = JSON.parse(resultJson);

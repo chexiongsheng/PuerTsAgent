@@ -360,6 +360,7 @@
             protected [__keep_incompatibility]: never;
             public static CreateJavaScriptEnv () : Puerts.ScriptEnv
             public static Eval ($env: Puerts.ScriptEnv, $script: string, $onFinish: System.Action$1<string>) : void
+            public static EvalSync ($env: Puerts.ScriptEnv, $script: string) : void
             public constructor ()
         }
     }
