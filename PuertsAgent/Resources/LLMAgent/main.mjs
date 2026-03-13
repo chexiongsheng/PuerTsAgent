@@ -39271,60 +39271,45 @@ function randomSuffix(len = 5) {
   return result;
 }
 __name(randomSuffix, "randomSuffix");
-var BigStringStore = class {
+var ImageStore = class {
   static {
-    __name(this, "BigStringStore");
+    __name(this, "ImageStore");
   }
   entries = [];
-  /** Unique prefix for placeholders in this session, e.g. "bigstr_a3f9x". */
-  prefix;
-  /** Prefix for non-retrievable image placeholders, e.g. "image_a3f9x". */
+  /** Unique prefix for image placeholders, e.g. "image_a3f9x". */
   imagePrefix;
   constructor() {
     const suffix = randomSuffix(5);
-    this.prefix = `bigstr_${suffix}`;
     this.imagePrefix = `image_${suffix}`;
   }
-  /** Store a string and return its index. */
-  store(content, contentType, nonRetrievable = false) {
+  /** Store an image string and return its index. */
+  store(content) {
     const index = this.entries.length;
-    this.entries.push({ content, length: content.length, contentType, nonRetrievable });
+    this.entries.push({ content, length: content.length });
     return index;
   }
   /** Build a placeholder string for a stored entry. */
-  placeholder(index, length, contentType, nonRetrievable) {
-    if (nonRetrievable) {
-      return `${this.imagePrefix}(${index}, ${length})`;
-    }
-    return `${this.prefix}(${index}, ${length}, "${contentType}")`;
+  placeholder(index, length) {
+    return `${this.imagePrefix}(${index}, ${length})`;
   }
-  /** Retrieve a stored string by index. Returns null if not found or non-retrievable. */
+  /** Retrieve a stored image string by index. Returns null if not found. */
   retrieve(index) {
     if (index < 0 || index >= this.entries.length) return null;
-    const entry = this.entries[index];
-    if (entry.nonRetrievable) return null;
-    return { content: entry.content, contentType: entry.contentType };
-  }
-  /** Get entry metadata without content. */
-  getMeta(index) {
-    if (index < 0 || index >= this.entries.length) return null;
-    const { length, contentType, nonRetrievable } = this.entries[index];
-    return { length, contentType, nonRetrievable };
+    return this.entries[index].content;
   }
   /** Clear all stored entries and regenerate prefix. */
   clear() {
     this.entries = [];
     const suffix = randomSuffix(5);
-    this.prefix = `bigstr_${suffix}`;
     this.imagePrefix = `image_${suffix}`;
   }
   get size() {
     return this.entries.length;
   }
 };
-var bigStringStore = new BigStringStore();
+var imageStore = new ImageStore();
 var currentAbortController = null;
-var BIG_STRING_THRESHOLD = 500;
+var IMAGE_COMPRESS_THRESHOLD = 500;
 var ENABLE_SLIDING_WINDOW = true;
 var CHARS_PER_TOKEN = 4;
 var MAX_INPUT_TOKENS = 6e5;
@@ -39334,22 +39319,17 @@ var STEP_LIMIT_PREFIX = "[STEP_LIMIT_REACHED]";
 var SUMMARY_MAX_CHARS = 2e3;
 var SYSTEM_PROMPT = `You are a helpful AI assistant running inside Unity via PuerTS (a TypeScript/JavaScript runtime for Unity). You can help with game development, scripting, and general questions. Be concise and practical.
 
-## Context Compression \u2014 Placeholder System
+## Context Compression \u2014 Image Placeholders
 
-To save context space, large strings in **past** tool calls (both request parameters
-and results) are automatically replaced with compact placeholders.
-The placeholder prefixes are unique per session and will be told to you here:
-
-- \`{BIGSTR_PREFIX}(index, length, "type")\` - a text string that was replaced.
-  \`index\` is the storage slot, \`length\` is the original character count,
-  and \`type\` describes the content (e.g. "code", "eval_result").
-  **You can retrieve the original content** by calling the \`retrieveBigString\` tool with the index.
-  Only retrieve it when you genuinely need the exact content \u2014 in most cases the
-  surrounding context is enough.
+To save context space, base64-encoded image data in **past** tool call results
+is automatically replaced with compact placeholders.
+The placeholder prefix is unique per session:
 
 - \`{IMAGE_PREFIX}(index, length)\` - a base64-encoded image that was replaced.
-  These **cannot** be retrieved as text. If you need to see the screenshot again,
-  call the \`captureScreenshot\` tool to take a fresh one.
+  \`index\` is the storage slot, \`length\` is the original character count.
+  **You can retrieve the original content** by calling the \`retrieveImage\` tool with the index.
+  Only retrieve it when you genuinely need the exact base64 data \u2014 in most cases,
+  take a new screenshot via \`captureScreenshot\` instead.
 
 ## PuerTS: JS \u2194 C# Interop Rules
 
@@ -39455,47 +39435,39 @@ var conversationHistory = [];
 var currentConfig = { ...DEFAULT_CONFIG };
 var isConfigured = false;
 var historySummary = null;
-function inferContentType(key, _value) {
-  if (key === "code") return "code";
-  if (key === "result") return "eval_result";
-  if (key === "stack") return "stack_trace";
-  if (key === "error") return "error";
-  if (key === "data" || key === "base64" || key === "image") return "image_base64";
-  return "text";
+function isImageBase64Key(key) {
+  return key === "data" || key === "base64" || key === "image";
 }
-__name(inferContentType, "inferContentType");
-function replaceBigStrings(obj, parentKey = "") {
+__name(isImageBase64Key, "isImageBase64Key");
+function replaceImageStrings(obj, parentKey = "") {
   if (obj === null || obj === void 0) return obj;
   if (typeof obj === "string") {
-    if (obj.length >= BIG_STRING_THRESHOLD) {
-      const ctype = inferContentType(parentKey, obj);
-      const isImage = ctype === "image_base64";
-      const idx = bigStringStore.store(obj, ctype, isImage);
-      return bigStringStore.placeholder(idx, obj.length, ctype, isImage);
+    if (obj.length >= IMAGE_COMPRESS_THRESHOLD && isImageBase64Key(parentKey)) {
+      const idx = imageStore.store(obj);
+      return imageStore.placeholder(idx, obj.length);
     }
     return obj;
   }
   if (Array.isArray(obj)) {
     const out = new Array(obj.length);
     for (let i2 = 0; i2 < obj.length; i2++) {
-      out[i2] = replaceBigStrings(obj[i2], parentKey);
+      out[i2] = replaceImageStrings(obj[i2], parentKey);
     }
     return out;
   }
   if (typeof obj === "object") {
     const out = {};
     for (const key of Object.keys(obj)) {
-      out[key] = replaceBigStrings(obj[key], key);
+      out[key] = replaceImageStrings(obj[key], key);
     }
     return out;
   }
   return obj;
 }
-__name(replaceBigStrings, "replaceBigStrings");
+__name(replaceImageStrings, "replaceImageStrings");
 function compressMessage(msg) {
   try {
-    const compressed = replaceBigStrings(msg);
-    return compressed;
+    return replaceImageStrings(msg);
   } catch {
     return msg;
   }
@@ -39530,7 +39502,7 @@ function compressMessages(messages, skipTail = 0) {
   const end = messages.length - skipTail;
   let replaced = 0;
   const result = new Array(messages.length);
-  const storeSizeBefore = bigStringStore.size;
+  const storeSizeBefore = imageStore.size;
   for (let i2 = 0; i2 < messages.length; i2++) {
     if (i2 < end) {
       result[i2] = compressMessage(messages[i2]);
@@ -39538,7 +39510,7 @@ function compressMessages(messages, skipTail = 0) {
       result[i2] = messages[i2];
     }
   }
-  replaced = bigStringStore.size - storeSizeBefore;
+  replaced = imageStore.size - storeSizeBefore;
   return { messages: result, replaced };
 }
 __name(compressMessages, "compressMessages");
@@ -39548,13 +39520,13 @@ function compressHistoryMessages() {
   if (compressedUpToIndex >= end) return;
   let replacedCount = 0;
   for (let i2 = compressedUpToIndex; i2 < end; i2++) {
-    const storeBefore = bigStringStore.size;
+    const storeBefore = imageStore.size;
     conversationHistory[i2] = compressMessage(conversationHistory[i2]);
-    if (bigStringStore.size > storeBefore) replacedCount++;
+    if (imageStore.size > storeBefore) replacedCount++;
   }
   compressedUpToIndex = end;
   if (replacedCount > 0) {
-    console.log(`[Agent] Compressed ${replacedCount} history messages (bigStringStore size: ${bigStringStore.size})`);
+    console.log(`[Agent] Compressed ${replacedCount} image(s) in history (imageStore size: ${imageStore.size})`);
   }
 }
 __name(compressHistoryMessages, "compressHistoryMessages");
@@ -39660,38 +39632,30 @@ ${summary}`
   return { messages: result, trimmed: true };
 }
 __name(trimMessagesByTokenBudget, "trimMessagesByTokenBudget");
-function createRetrieveBigStringTool() {
+function createRetrieveImageTool() {
   return {
-    retrieveBigString: tool({
-      description: "Retrieve the original content of a compressed placeholder. In conversation history, large strings are automatically replaced with placeholders to save context space. Call this tool with the index from the placeholder to get the full original text. Note: image placeholders CANNOT be retrieved \u2014 take a new screenshot instead.",
+    retrieveImage: tool({
+      description: "Retrieve the original base64 content of a compressed image placeholder. In conversation history, base64-encoded image data is automatically replaced with compact placeholders to save context space. Call this tool with the index from the placeholder to get the full base64 string.",
       inputSchema: external_exports.object({
-        index: external_exports.number().int().min(0).describe('The index from the placeholder, e.g. for bigstr_xxxxx(3, 1200, "code"), index is 3.')
+        index: external_exports.number().int().min(0).describe("The index from the placeholder, e.g. for image_xxxxx(3, 1200), index is 3.")
       }),
       execute: /* @__PURE__ */ __name(async ({ index }) => {
-        const result = bigStringStore.retrieve(index);
-        if (!result) {
-          const meta3 = bigStringStore.getMeta(index);
-          if (meta3?.nonRetrievable) {
-            return {
-              success: false,
-              error: `Entry ${index} is a non-retrievable ${meta3.contentType} (${meta3.length} chars). If it's an image, take a new screenshot instead.`
-            };
-          }
+        const content = imageStore.retrieve(index);
+        if (content === null) {
           return {
             success: false,
-            error: `No entry found at index ${index}. Valid range: 0-${bigStringStore.size - 1}.`
+            error: `No entry found at index ${index}. Valid range: 0-${imageStore.size - 1}.`
           };
         }
         return {
           success: true,
-          contentType: result.contentType,
-          content: result.content
+          content
         };
       }, "execute")
     })
   };
 }
-__name(createRetrieveBigStringTool, "createRetrieveBigStringTool");
+__name(createRetrieveImageTool, "createRetrieveImageTool");
 function configure(config2) {
   currentConfig = { ...DEFAULT_CONFIG, ...config2 };
   if (!currentConfig.apiKey) {
@@ -39704,7 +39668,7 @@ function configure(config2) {
 }
 __name(configure, "configure");
 function buildSystemPrompt() {
-  return SYSTEM_PROMPT.replace(/\{BIGSTR_PREFIX\}/g, bigStringStore.prefix).replace(/\{IMAGE_PREFIX\}/g, bigStringStore.imagePrefix);
+  return SYSTEM_PROMPT.replace(/\{IMAGE_PREFIX\}/g, imageStore.imagePrefix);
 }
 __name(buildSystemPrompt, "buildSystemPrompt");
 function createToolSet() {
@@ -39714,7 +39678,7 @@ function createToolSet() {
     ...createSceneViewNavigationTools(),
     ...createTypeReflectionTools(),
     ...createEvalTools(),
-    ...createRetrieveBigStringTool()
+    ...createRetrieveImageTool()
   };
 }
 __name(createToolSet, "createToolSet");
@@ -39763,7 +39727,7 @@ function handlePrepareStep({ messages, stepNumber, steps }) {
   const { messages: compressed, replaced } = compressMessages(messages, 2);
   let newMessages = replaced > 0 ? compressed : [...messages];
   if (replaced > 0) {
-    console.log(`[Agent] prepareStep(${stepNumber}): compressed ${replaced} big strings (store size: ${bigStringStore.size})`);
+    console.log(`[Agent] prepareStep(${stepNumber}): compressed ${replaced} image(s) (imageStore size: ${imageStore.size})`);
   }
   if (ENABLE_SLIDING_WINDOW) {
     const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
@@ -39963,7 +39927,7 @@ __name(abortGeneration, "abortGeneration");
 function clearHistory() {
   conversationHistory = [];
   compressedUpToIndex = 0;
-  bigStringStore.clear();
+  imageStore.clear();
   historySummary = null;
   console.log("[Agent] Conversation history cleared.");
 }

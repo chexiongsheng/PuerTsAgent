@@ -13,7 +13,7 @@ import { createTypeReflectionTools } from '../tools/type-reflection-tool.mjs';
 import { createEvalTools } from '../tools/eval-tool.mjs';
 
 // ============================================================
-// BigStringStore – stores large strings replaced by placeholders
+// ImageStore – stores compressed base64 image data with retrievable placeholders
 // ============================================================
 
 /** Generate a random alphanumeric suffix of the given length. */
@@ -26,64 +26,44 @@ function randomSuffix(len: number = 5): string {
     return result;
 }
 
-/** Metadata about a stored big string entry. */
-interface BigStringEntry {
+/** Metadata about a stored image entry. */
+interface ImageEntry {
     content: string;
     length: number;
-    /** A short hint about what this content is, e.g. "code", "eval_result", "screenshot_base64". */
-    contentType: string;
-    /** If true, content cannot be meaningfully retrieved as text (e.g. base64 image data). */
-    nonRetrievable: boolean;
 }
 
-class BigStringStore {
-    private entries: BigStringEntry[] = [];
-    /** Unique prefix for placeholders in this session, e.g. "bigstr_a3f9x". */
-    readonly prefix: string;
-    /** Prefix for non-retrievable image placeholders, e.g. "image_a3f9x". */
+class ImageStore {
+    private entries: ImageEntry[] = [];
+    /** Unique prefix for image placeholders, e.g. "image_a3f9x". */
     readonly imagePrefix: string;
 
     constructor() {
         const suffix = randomSuffix(5);
-        this.prefix = `bigstr_${suffix}`;
         this.imagePrefix = `image_${suffix}`;
     }
 
-    /** Store a string and return its index. */
-    store(content: string, contentType: string, nonRetrievable: boolean = false): number {
+    /** Store an image string and return its index. */
+    store(content: string): number {
         const index = this.entries.length;
-        this.entries.push({ content, length: content.length, contentType, nonRetrievable });
+        this.entries.push({ content, length: content.length });
         return index;
     }
 
     /** Build a placeholder string for a stored entry. */
-    placeholder(index: number, length: number, contentType: string, nonRetrievable: boolean): string {
-        if (nonRetrievable) {
-            return `${this.imagePrefix}(${index}, ${length})`;
-        }
-        return `${this.prefix}(${index}, ${length}, "${contentType}")`;
+    placeholder(index: number, length: number): string {
+        return `${this.imagePrefix}(${index}, ${length})`;
     }
 
-    /** Retrieve a stored string by index. Returns null if not found or non-retrievable. */
-    retrieve(index: number): { content: string; contentType: string } | null {
+    /** Retrieve a stored image string by index. Returns null if not found. */
+    retrieve(index: number): string | null {
         if (index < 0 || index >= this.entries.length) return null;
-        const entry = this.entries[index];
-        if (entry.nonRetrievable) return null;
-        return { content: entry.content, contentType: entry.contentType };
-    }
-
-    /** Get entry metadata without content. */
-    getMeta(index: number): { length: number; contentType: string; nonRetrievable: boolean } | null {
-        if (index < 0 || index >= this.entries.length) return null;
-        const { length, contentType, nonRetrievable } = this.entries[index];
-        return { length, contentType, nonRetrievable };
+        return this.entries[index].content;
     }
 
     /** Clear all stored entries and regenerate prefix. */
     clear(): void {
         this.entries = [];
         const suffix = randomSuffix(5);
-        (this as any).prefix = `bigstr_${suffix}`;
         (this as any).imagePrefix = `image_${suffix}`;
     }
 
@@ -92,7 +72,7 @@ class BigStringStore {
     }
 }
 
-let bigStringStore = new BigStringStore();
+let imageStore = new ImageStore();
 
 /**
  * AbortController for the current generation.
@@ -103,10 +83,9 @@ let bigStringStore = new BigStringStore();
 let currentAbortController: AbortController | null = null;
 
 /**
- * Minimum string length to trigger replacement with a placeholder.
- * Strings shorter than this are kept inline to avoid unnecessary tool calls.
+ * Minimum string length to trigger image base64 replacement with a placeholder.
  */
-const BIG_STRING_THRESHOLD = 500;
+const IMAGE_COMPRESS_THRESHOLD = 500;
 
 // ============================================================
 // Token estimation & sliding window constants
@@ -169,25 +148,21 @@ export interface AgentConfig {
     summaryModel?: string;
 }
 
+//TDOO: System prompt add unity version and puerTs version
 /** System prompt is managed entirely by the TS side and cannot be overridden from C#. */
 const SYSTEM_PROMPT = `You are a helpful AI assistant running inside Unity via PuerTS (a TypeScript/JavaScript runtime for Unity). You can help with game development, scripting, and general questions. Be concise and practical.
 
-## Context Compression — Placeholder System
+## Context Compression — Image Placeholders
 
-To save context space, large strings in **past** tool calls (both request parameters
-and results) are automatically replaced with compact placeholders.
-The placeholder prefixes are unique per session and will be told to you here:
-
-- \`{BIGSTR_PREFIX}(index, length, "type")\` - a text string that was replaced.
-  \`index\` is the storage slot, \`length\` is the original character count,
-  and \`type\` describes the content (e.g. "code", "eval_result").
-  **You can retrieve the original content** by calling the \`retrieveBigString\` tool with the index.
-  Only retrieve it when you genuinely need the exact content — in most cases the
-  surrounding context is enough.
+To save context space, base64-encoded image data in **past** tool call results
+is automatically replaced with compact placeholders.
+The placeholder prefix is unique per session:
 
 - \`{IMAGE_PREFIX}(index, length)\` - a base64-encoded image that was replaced.
-  These **cannot** be retrieved as text. If you need to see the screenshot again,
-  call the \`captureScreenshot\` tool to take a fresh one.
+  \`index\` is the storage slot, \`length\` is the original character count.
+  **You can retrieve the original content** by calling the \`retrieveImage\` tool with the index.
+  Only retrieve it when you genuinely need the exact base64 data — in most cases,
+  take a new screenshot via \`captureScreenshot\` instead.
 
 ## PuerTS: JS ↔ C# Interop Rules
 
@@ -305,35 +280,26 @@ let isConfigured = false;
 let historySummary: string | null = null;
 
 // ============================================================
-// History compression – replace big strings with placeholders
+// History compression – replace image base64 data with placeholders
 // ============================================================
 
-/**
- * Determine a human-friendly content type label for a big string
- * found in a specific context.
- */
-function inferContentType(key: string, _value: string): string {
-    if (key === 'code') return 'code';
-    if (key === 'result') return 'eval_result';
-    if (key === 'stack') return 'stack_trace';
-    if (key === 'error') return 'error';
-    if (key === 'data' || key === 'base64' || key === 'image') return 'image_base64';
-    return 'text';
+/** Check if a key indicates image base64 content. */
+function isImageBase64Key(key: string): boolean {
+    return key === 'data' || key === 'base64' || key === 'image';
 }
 
 /**
- * Recursively walk a JSON-like value and replace large string leaves
- * with placeholders. Operates on a **deep clone** – the original is never mutated.
+ * Recursively walk a JSON-like value and replace large base64 image strings
+ * with placeholders. Text strings are left untouched.
+ * Operates on a **deep clone** – the original is never mutated.
  */
-function replaceBigStrings(obj: any, parentKey: string = ''): any {
+function replaceImageStrings(obj: any, parentKey: string = ''): any {
     if (obj === null || obj === undefined) return obj;
 
     if (typeof obj === 'string') {
-        if (obj.length >= BIG_STRING_THRESHOLD) {
-            const ctype = inferContentType(parentKey, obj);
-            const isImage = ctype === 'image_base64';
-            const idx = bigStringStore.store(obj, ctype, isImage);
-            return bigStringStore.placeholder(idx, obj.length, ctype, isImage);
+        if (obj.length >= IMAGE_COMPRESS_THRESHOLD && isImageBase64Key(parentKey)) {
+            const idx = imageStore.store(obj);
+            return imageStore.placeholder(idx, obj.length);
         }
         return obj;
     }
@@ -341,7 +307,7 @@ function replaceBigStrings(obj: any, parentKey: string = ''): any {
     if (Array.isArray(obj)) {
         const out = new Array(obj.length);
         for (let i = 0; i < obj.length; i++) {
-            out[i] = replaceBigStrings(obj[i], parentKey);
+            out[i] = replaceImageStrings(obj[i], parentKey);
         }
         return out;
     }
@@ -349,7 +315,7 @@ function replaceBigStrings(obj: any, parentKey: string = ''): any {
     if (typeof obj === 'object') {
         const out: any = {};
         for (const key of Object.keys(obj)) {
-            out[key] = replaceBigStrings(obj[key], key);
+            out[key] = replaceImageStrings(obj[key], key);
         }
         return out;
     }
@@ -358,14 +324,12 @@ function replaceBigStrings(obj: any, parentKey: string = ''): any {
 }
 
 /**
- * Compress big strings inside a single message (non-mutating).
+ * Compress image base64 strings inside a single message (non-mutating).
  * Returns a new message object if anything was replaced, otherwise the original.
  */
 function compressMessage(msg: any): any {
     try {
-        const compressed = replaceBigStrings(msg);
-        // Quick identity check – if nothing was stored, skip
-        return compressed;
+        return replaceImageStrings(msg);
     } catch {
         return msg;
     }
@@ -413,7 +377,7 @@ function compressMessages(messages: any[], skipTail: number = 0): { messages: an
     const end = messages.length - skipTail;
     let replaced = 0;
     const result = new Array(messages.length);
-    const storeSizeBefore = bigStringStore.size;
+    const storeSizeBefore = imageStore.size;
 
     for (let i = 0; i < messages.length; i++) {
         if (i < end) {
@@ -423,7 +387,7 @@ function compressMessages(messages: any[], skipTail: number = 0): { messages: an
         }
     }
 
-    replaced = bigStringStore.size - storeSizeBefore;
+    replaced = imageStore.size - storeSizeBefore;
     return { messages: result, replaced };
 }
 
@@ -444,14 +408,14 @@ function compressHistoryMessages(): void {
 
     let replacedCount = 0;
     for (let i = compressedUpToIndex; i < end; i++) {
-        const storeBefore = bigStringStore.size;
+        const storeBefore = imageStore.size;
         conversationHistory[i] = compressMessage(conversationHistory[i]);
-        if (bigStringStore.size > storeBefore) replacedCount++;
+        if (imageStore.size > storeBefore) replacedCount++;
     }
 
     compressedUpToIndex = end;
     if (replacedCount > 0) {
-        console.log(`[Agent] Compressed ${replacedCount} history messages (bigStringStore size: ${bigStringStore.size})`);
+        console.log(`[Agent] Compressed ${replacedCount} image(s) in history (imageStore size: ${imageStore.size})`);
     }
 }
 
@@ -617,44 +581,35 @@ async function trimMessagesByTokenBudget(
 }
 
 // ============================================================
-// retrieveBigString tool
+// retrieveImage tool
 // ============================================================
 
-function createRetrieveBigStringTool() {
+function createRetrieveImageTool() {
     return {
-        retrieveBigString: tool({
+        retrieveImage: tool({
             description:
-                'Retrieve the original content of a compressed placeholder. ' +
-                'In conversation history, large strings are automatically replaced with ' +
-                'placeholders to save context space. ' +
-                'Call this tool with the index from the placeholder to get the full original text. ' +
-                'Note: image placeholders CANNOT be retrieved — take a new screenshot instead.',
+                'Retrieve the original base64 content of a compressed image placeholder. ' +
+                'In conversation history, base64-encoded image data is automatically replaced with ' +
+                'compact placeholders to save context space. ' +
+                'Call this tool with the index from the placeholder to get the full base64 string.',
             inputSchema: z.object({
                 index: z
                     .number()
                     .int()
                     .min(0)
-                    .describe('The index from the placeholder, e.g. for bigstr_xxxxx(3, 1200, "code"), index is 3.'),
+                    .describe('The index from the placeholder, e.g. for image_xxxxx(3, 1200), index is 3.'),
             }),
             execute: async ({ index }) => {
-                const result = bigStringStore.retrieve(index);
-                if (!result) {
-                    const meta = bigStringStore.getMeta(index);
-                    if (meta?.nonRetrievable) {
-                        return {
-                            success: false,
-                            error: `Entry ${index} is a non-retrievable ${meta.contentType} (${meta.length} chars). If it's an image, take a new screenshot instead.`,
-                        };
-                    }
+                const content = imageStore.retrieve(index);
+                if (content === null) {
                     return {
                         success: false,
-                        error: `No entry found at index ${index}. Valid range: 0-${bigStringStore.size - 1}.`,
+                        error: `No entry found at index ${index}. Valid range: 0-${imageStore.size - 1}.`,
                     };
                 }
                 return {
                     success: true,
-                    contentType: result.contentType,
-                    content: result.content,
+                    content,
                 };
             },
         }),
@@ -686,8 +641,7 @@ export function configure(config: Partial<AgentConfig>): string {
  */
 function buildSystemPrompt(): string {
     return SYSTEM_PROMPT
-        .replace(/\{BIGSTR_PREFIX\}/g, bigStringStore.prefix)
-        .replace(/\{IMAGE_PREFIX\}/g, bigStringStore.imagePrefix);
+        .replace(/\{IMAGE_PREFIX\}/g, imageStore.imagePrefix);
 }
 
 // ============================================================
@@ -704,7 +658,7 @@ function createToolSet() {
         ...createSceneViewNavigationTools(),
         ...createTypeReflectionTools(),
         ...createEvalTools(),
-        ...createRetrieveBigStringTool(),
+        ...createRetrieveImageTool(),
     };
 }
 
@@ -766,11 +720,11 @@ function handleStepFinish(onProgress: ((text: string) => void) | undefined, { st
 function handlePrepareStep({ messages, stepNumber, steps }: any): any {
     if (stepNumber === 0) return undefined;
 
-    // ---- (1) Compress big strings in OLDER messages ----
+    // ---- (1) Compress image base64 in OLDER messages ----
     const { messages: compressed, replaced } = compressMessages(messages, 2);
     let newMessages = replaced > 0 ? compressed : [...messages];
     if (replaced > 0) {
-        console.log(`[Agent] prepareStep(${stepNumber}): compressed ${replaced} big strings (store size: ${bigStringStore.size})`);
+        console.log(`[Agent] prepareStep(${stepNumber}): compressed ${replaced} image(s) (imageStore size: ${imageStore.size})`);
     }
 
     // ---- (1.5) Sliding window: check actual token usage from last step ----
@@ -1042,7 +996,7 @@ export function abortGeneration(): void {
 export function clearHistory(): void {
     conversationHistory = [];
     compressedUpToIndex = 0;
-    bigStringStore.clear();
+    imageStore.clear();
     historySummary = null;
     console.log('[Agent] Conversation history cleared.');
 }
