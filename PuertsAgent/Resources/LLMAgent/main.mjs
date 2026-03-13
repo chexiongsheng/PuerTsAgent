@@ -39276,31 +39276,16 @@ var ImageStore = class {
     __name(this, "ImageStore");
   }
   entries = [];
-  /** Fast lookup from content hash (first 64 + last 64 chars + length) to index. */
-  dedup = /* @__PURE__ */ new Map();
   /** Unique prefix for image placeholders, e.g. "image_a3f9x". */
   imagePrefix;
   constructor() {
     const suffix = randomSuffix(5);
     this.imagePrefix = `image_${suffix}`;
   }
-  /** Build a dedup key from content to avoid storing the full string in the Map key. */
-  dedupKey(content) {
-    const len = content.length;
-    const head = content.substring(0, 64);
-    const tail = content.substring(len - 64);
-    return `${len}:${head}:${tail}`;
-  }
-  /** Store an image string and return its index. If the same content was already stored, return the existing index. */
+  /** Store an image string and return its index. */
   store(content) {
-    const key = this.dedupKey(content);
-    const existing = this.dedup.get(key);
-    if (existing !== void 0) {
-      return existing;
-    }
     const index = this.entries.length;
     this.entries.push({ content, length: content.length });
-    this.dedup.set(key, index);
     return index;
   }
   /** Build a placeholder string for a stored entry. */
@@ -39315,7 +39300,6 @@ var ImageStore = class {
   /** Clear all stored entries and regenerate prefix. */
   clear() {
     this.entries = [];
-    this.dedup.clear();
     const suffix = randomSuffix(5);
     this.imagePrefix = `image_${suffix}`;
   }
@@ -39745,6 +39729,12 @@ function handleStepFinish(onProgress, { stepNumber, text: text2, toolCalls, tool
 __name(handleStepFinish, "handleStepFinish");
 function handlePrepareStep({ messages, stepNumber, steps }) {
   if (stepNumber === 0) return void 0;
+  const lastFew = messages.slice(-3).map((m2, i2) => {
+    const role = m2.role || "?";
+    const contentPreview = typeof m2.content === "string" ? m2.content.substring(0, 40) : Array.isArray(m2.content) ? `[${m2.content.length} parts]` : "?";
+    return `${role}:${contentPreview}`;
+  });
+  console.log(`[Agent] prepareStep(${stepNumber}): ${messages.length} msgs, last3=[${lastFew.join(" | ")}]`);
   const { replaced } = compressMessages(messages, 2);
   let newMessages = messages;
   if (replaced > 0) {
@@ -39819,10 +39809,7 @@ ${historySummary}`
   }
   if (imageParts.length > 0) {
     console.log(`[Agent] prepareStep(${stepNumber}): injecting ${imageParts.length} screenshot image(s) as user message`);
-    newMessages[newMessages.length - 1] = {
-      role: "tool",
-      content: patchedContent
-    };
+    lastMsg.content = patchedContent;
     newMessages.push({
       role: "user",
       content: [
