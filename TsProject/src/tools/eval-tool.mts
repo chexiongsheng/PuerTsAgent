@@ -48,6 +48,7 @@ export function createEvalTools() {
                     if (!jsEnv) {
                         jsEnv = CS.LLMAgent.ScriptEnvBridge.CreateJavaScriptEnv();
                     }
+                    console.log(`[EvalJsTool] Executing code:\n${code}`);
 
                     // Wrap user code into a script that ScriptEnvBridge.Eval expects:
                     // The script must evaluate to a function that accepts an onFinish callback.

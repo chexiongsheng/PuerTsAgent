@@ -79,8 +79,10 @@ export function createScreenshotTools() {
                     };
                 }
             },
-            // Convert the tool result into multi-modal content
-            // so the AI SDK sends the image as an actual image.
+            // Return multi-modal content with the image as file-data.
+            // The Chat Completions API only supports images in user messages,
+            // so handlePrepareStep in agent-core will extract the image from
+            // this tool result and re-inject it as a user message.
             toModelOutput({ output: result }: { output: ScreenshotResult }) {
                 if (!result.success || !result.base64) {
                     return { type: 'content' as const, value: [{ type: 'text' as const, text: result.message }] };
@@ -158,7 +160,8 @@ export function createScreenshotTools() {
                     };
                 }
             },
-            // Same multi-modal output as captureScreenshot
+            // Same multi-modal output as captureScreenshot.
+            // handlePrepareStep will extract the image and inject as user message.
             toModelOutput({ output: result }: { output: ScreenshotResult }) {
                 if (!result.success || !result.base64) {
                     return { type: 'content' as const, value: [{ type: 'text' as const, text: result.message }] };

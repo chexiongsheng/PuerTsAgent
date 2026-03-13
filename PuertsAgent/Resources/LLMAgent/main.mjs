@@ -38908,8 +38908,10 @@ function createScreenshotTools() {
           };
         }
       }, "execute"),
-      // Convert the tool result into multi-modal content
-      // so the AI SDK sends the image as an actual image.
+      // Return multi-modal content with the image as file-data.
+      // The Chat Completions API only supports images in user messages,
+      // so handlePrepareStep in agent-core will extract the image from
+      // this tool result and re-inject it as a user message.
       toModelOutput({ output: result }) {
         if (!result.success || !result.base64) {
           return { type: "content", value: [{ type: "text", text: result.message }] };
@@ -38964,7 +38966,8 @@ function createScreenshotTools() {
           };
         }
       }, "execute"),
-      // Same multi-modal output as captureScreenshot
+      // Same multi-modal output as captureScreenshot.
+      // handlePrepareStep will extract the image and inject as user message.
       toModelOutput({ output: result }) {
         if (!result.success || !result.base64) {
           return { type: "content", value: [{ type: "text", text: result.message }] };
@@ -39208,6 +39211,8 @@ function createEvalTools() {
           if (!jsEnv) {
             jsEnv = CS.LLMAgent.ScriptEnvBridge.CreateJavaScriptEnv();
           }
+          console.log(`[EvalJsTool] Executing code:
+${code}`);
           const wrappedCode = `(function(onFinish) {
     (async () => {
         try {
