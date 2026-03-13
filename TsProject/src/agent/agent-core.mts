@@ -830,7 +830,7 @@ function handlePrepareStep({ messages, stepNumber, steps }: any): any {
         console.log(`[Agent] prepareStep(${stepNumber}): injecting ${imageParts.length} screenshot image(s) as user message`);
         // Mutate the tool message in-place so the AI SDK's internal reference
         // is also updated, preventing the same base64 from reappearing in later steps.
-        lastMsg.content = patchedContent;
+        lastMsg.content = patchedContent; // 删除了原有的工具里的base64
         newMessages.push({
             role: 'user',
             content: [
@@ -840,7 +840,9 @@ function handlePrepareStep({ messages, stepNumber, steps }: any): any {
                     text: 'Above is the screenshot I just captured. Please analyze it and respond to my earlier request.',
                 },
             ],
-        } as any);
+        } as any);// 由于handlePrepareStep传入下消息是由const stepInputMessages = [...initialMessages, ...responseMessages];拼接出来的，所有这里并不会影响到initialMessages，responseMessages
+        // 发完就没有了
+        // 所以截图工具的base64不会被压缩
     }
 
     return { messages: newMessages };
