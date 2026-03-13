@@ -290,48 +290,62 @@ function isImageBase64Key(key: string): boolean {
 
 /**
  * Recursively walk a JSON-like value and replace large base64 image strings
- * with placeholders. Text strings are left untouched.
- * Operates on a **deep clone** – the original is never mutated.
+ * with placeholders **in-place**. Arrays and objects are mutated directly
+ * so that the AI SDK's internal message references are updated, preventing
+ * the same image from being stored multiple times across steps.
+ * Returns true if any replacement was made.
  */
-function replaceImageStrings(obj: any, parentKey: string = ''): any {
-    if (obj === null || obj === undefined) return obj;
-
-    if (typeof obj === 'string') {
-        if (obj.length >= IMAGE_COMPRESS_THRESHOLD && isImageBase64Key(parentKey)) {
-            const idx = imageStore.store(obj);
-            return imageStore.placeholder(idx, obj.length);
-        }
-        return obj;
-    }
+function replaceImageStringsInPlace(obj: any, parentKey: string = ''): boolean {
+    if (obj === null || obj === undefined) return false;
+    // Strings cannot be mutated in-place; the caller handles replacement.
+    // We only recurse into arrays and objects here.
 
     if (Array.isArray(obj)) {
-        const out = new Array(obj.length);
+        let changed = false;
         for (let i = 0; i < obj.length; i++) {
-            out[i] = replaceImageStrings(obj[i], parentKey);
+            const item = obj[i];
+            if (typeof item === 'string') {
+                if (item.length >= IMAGE_COMPRESS_THRESHOLD && isImageBase64Key(parentKey)) {
+                    const idx = imageStore.store(item);
+                    obj[i] = imageStore.placeholder(idx, item.length);
+                    changed = true;
+                }
+            } else {
+                if (replaceImageStringsInPlace(item, parentKey)) changed = true;
+            }
         }
-        return out;
+        return changed;
     }
 
     if (typeof obj === 'object') {
-        const out: any = {};
+        let changed = false;
         for (const key of Object.keys(obj)) {
-            out[key] = replaceImageStrings(obj[key], key);
+            const val = obj[key];
+            if (typeof val === 'string') {
+                if (val.length >= IMAGE_COMPRESS_THRESHOLD && isImageBase64Key(key)) {
+                    const idx = imageStore.store(val);
+                    obj[key] = imageStore.placeholder(idx, val.length);
+                    changed = true;
+                }
+            } else {
+                if (replaceImageStringsInPlace(val, key)) changed = true;
+            }
         }
-        return out;
+        return changed;
     }
 
-    return obj;
+    return false;
 }
 
 /**
- * Compress image base64 strings inside a single message (non-mutating).
- * Returns a new message object if anything was replaced, otherwise the original.
+ * Compress image base64 strings inside a single message **in-place**.
+ * Returns true if any replacement was made.
  */
-function compressMessage(msg: any): any {
+function compressMessage(msg: any): boolean {
     try {
-        return replaceImageStrings(msg);
+        return replaceImageStringsInPlace(msg);
     } catch {
-        return msg;
+        return false;
     }
 }
 
@@ -373,22 +387,16 @@ function extractToolErrorMessage(output: unknown): string {
  * Compress an array of messages, skipping the last `skipTail` messages.
  * Returns a new array with compressed copies; originals are untouched.
  */
-function compressMessages(messages: any[], skipTail: number = 0): { messages: any[]; replaced: number } {
+function compressMessages(messages: any[], skipTail: number = 0): { replaced: number } {
     const end = messages.length - skipTail;
-    let replaced = 0;
-    const result = new Array(messages.length);
     const storeSizeBefore = imageStore.size;
 
-    for (let i = 0; i < messages.length; i++) {
-        if (i < end) {
-            result[i] = compressMessage(messages[i]);
-        } else {
-            result[i] = messages[i];
-        }
+    for (let i = 0; i < end; i++) {
+        compressMessage(messages[i]);
     }
 
-    replaced = imageStore.size - storeSizeBefore;
-    return { messages: result, replaced };
+    const replaced = imageStore.size - storeSizeBefore;
+    return { replaced };
 }
 
 /**
@@ -409,7 +417,7 @@ function compressHistoryMessages(): void {
     let replacedCount = 0;
     for (let i = compressedUpToIndex; i < end; i++) {
         const storeBefore = imageStore.size;
-        conversationHistory[i] = compressMessage(conversationHistory[i]);
+        compressMessage(conversationHistory[i]);
         if (imageStore.size > storeBefore) replacedCount++;
     }
 
@@ -720,9 +728,19 @@ function handleStepFinish(onProgress: ((text: string) => void) | undefined, { st
 function handlePrepareStep({ messages, stepNumber, steps }: any): any {
     if (stepNumber === 0) return undefined;
 
-    // ---- (1) Compress image base64 in OLDER messages ----
-    const { messages: compressed, replaced } = compressMessages(messages, 2);
-    let newMessages = replaced > 0 ? compressed : [...messages];
+    // ---- Diagnostic: log message identities to check if AI SDK rebuilds them ----
+    const lastFew = messages.slice(-3).map((m: any, i: number) => {
+        const role = m.role || '?';
+        const contentPreview = typeof m.content === 'string'
+            ? m.content.substring(0, 40)
+            : (Array.isArray(m.content) ? `[${m.content.length} parts]` : '?');
+        return `${role}:${contentPreview}`;
+    });
+    console.log(`[Agent] prepareStep(${stepNumber}): ${messages.length} msgs, last3=[${lastFew.join(' | ')}]`);
+
+    // ---- (1) Compress image base64 in OLDER messages (in-place) ----
+    const { replaced } = compressMessages(messages, 2);
+    let newMessages = messages;
     if (replaced > 0) {
         console.log(`[Agent] prepareStep(${stepNumber}): compressed ${replaced} image(s) (imageStore size: ${imageStore.size})`);
     }
@@ -762,9 +780,13 @@ function handlePrepareStep({ messages, stepNumber, steps }: any): any {
     }
 
     // ---- (2) Extract screenshot images from the last tool message ----
+    // If messages were modified (compressed in-place or trimmed), we need to
+    // return them. Trimming creates a new array, so check identity.
+    const modified = replaced > 0 || newMessages !== messages;
+
     const lastMsg = newMessages[newMessages.length - 1];
     if (!lastMsg || lastMsg.role !== 'tool') {
-        return replaced > 0 ? { messages: newMessages } : undefined;
+        return modified ? { messages: newMessages } : undefined;
     }
 
     const imageParts: Array<any> = [];
@@ -806,10 +828,9 @@ function handlePrepareStep({ messages, stepNumber, steps }: any): any {
 
     if (imageParts.length > 0) {
         console.log(`[Agent] prepareStep(${stepNumber}): injecting ${imageParts.length} screenshot image(s) as user message`);
-        newMessages[newMessages.length - 1] = {
-            role: 'tool',
-            content: patchedContent,
-        } as any;
+        // Mutate the tool message in-place so the AI SDK's internal reference
+        // is also updated, preventing the same base64 from reappearing in later steps.
+        lastMsg.content = patchedContent;
         newMessages.push({
             role: 'user',
             content: [

@@ -39276,16 +39276,31 @@ var ImageStore = class {
     __name(this, "ImageStore");
   }
   entries = [];
+  /** Fast lookup from content hash (first 64 + last 64 chars + length) to index. */
+  dedup = /* @__PURE__ */ new Map();
   /** Unique prefix for image placeholders, e.g. "image_a3f9x". */
   imagePrefix;
   constructor() {
     const suffix = randomSuffix(5);
     this.imagePrefix = `image_${suffix}`;
   }
-  /** Store an image string and return its index. */
+  /** Build a dedup key from content to avoid storing the full string in the Map key. */
+  dedupKey(content) {
+    const len = content.length;
+    const head = content.substring(0, 64);
+    const tail = content.substring(len - 64);
+    return `${len}:${head}:${tail}`;
+  }
+  /** Store an image string and return its index. If the same content was already stored, return the existing index. */
   store(content) {
+    const key = this.dedupKey(content);
+    const existing = this.dedup.get(key);
+    if (existing !== void 0) {
+      return existing;
+    }
     const index = this.entries.length;
     this.entries.push({ content, length: content.length });
+    this.dedup.set(key, index);
     return index;
   }
   /** Build a placeholder string for a stored entry. */
@@ -39300,6 +39315,7 @@ var ImageStore = class {
   /** Clear all stored entries and regenerate prefix. */
   clear() {
     this.entries = [];
+    this.dedup.clear();
     const suffix = randomSuffix(5);
     this.imagePrefix = `image_${suffix}`;
   }
@@ -39439,37 +39455,48 @@ function isImageBase64Key(key) {
   return key === "data" || key === "base64" || key === "image";
 }
 __name(isImageBase64Key, "isImageBase64Key");
-function replaceImageStrings(obj, parentKey = "") {
-  if (obj === null || obj === void 0) return obj;
-  if (typeof obj === "string") {
-    if (obj.length >= IMAGE_COMPRESS_THRESHOLD && isImageBase64Key(parentKey)) {
-      const idx = imageStore.store(obj);
-      return imageStore.placeholder(idx, obj.length);
-    }
-    return obj;
-  }
+function replaceImageStringsInPlace(obj, parentKey = "") {
+  if (obj === null || obj === void 0) return false;
   if (Array.isArray(obj)) {
-    const out = new Array(obj.length);
+    let changed = false;
     for (let i2 = 0; i2 < obj.length; i2++) {
-      out[i2] = replaceImageStrings(obj[i2], parentKey);
+      const item = obj[i2];
+      if (typeof item === "string") {
+        if (item.length >= IMAGE_COMPRESS_THRESHOLD && isImageBase64Key(parentKey)) {
+          const idx = imageStore.store(item);
+          obj[i2] = imageStore.placeholder(idx, item.length);
+          changed = true;
+        }
+      } else {
+        if (replaceImageStringsInPlace(item, parentKey)) changed = true;
+      }
     }
-    return out;
+    return changed;
   }
   if (typeof obj === "object") {
-    const out = {};
+    let changed = false;
     for (const key of Object.keys(obj)) {
-      out[key] = replaceImageStrings(obj[key], key);
+      const val = obj[key];
+      if (typeof val === "string") {
+        if (val.length >= IMAGE_COMPRESS_THRESHOLD && isImageBase64Key(key)) {
+          const idx = imageStore.store(val);
+          obj[key] = imageStore.placeholder(idx, val.length);
+          changed = true;
+        }
+      } else {
+        if (replaceImageStringsInPlace(val, key)) changed = true;
+      }
     }
-    return out;
+    return changed;
   }
-  return obj;
+  return false;
 }
-__name(replaceImageStrings, "replaceImageStrings");
+__name(replaceImageStringsInPlace, "replaceImageStringsInPlace");
 function compressMessage(msg) {
   try {
-    return replaceImageStrings(msg);
+    return replaceImageStringsInPlace(msg);
   } catch {
-    return msg;
+    return false;
   }
 }
 __name(compressMessage, "compressMessage");
@@ -39500,18 +39527,12 @@ function extractToolErrorMessage(output) {
 __name(extractToolErrorMessage, "extractToolErrorMessage");
 function compressMessages(messages, skipTail = 0) {
   const end = messages.length - skipTail;
-  let replaced = 0;
-  const result = new Array(messages.length);
   const storeSizeBefore = imageStore.size;
-  for (let i2 = 0; i2 < messages.length; i2++) {
-    if (i2 < end) {
-      result[i2] = compressMessage(messages[i2]);
-    } else {
-      result[i2] = messages[i2];
-    }
+  for (let i2 = 0; i2 < end; i2++) {
+    compressMessage(messages[i2]);
   }
-  replaced = imageStore.size - storeSizeBefore;
-  return { messages: result, replaced };
+  const replaced = imageStore.size - storeSizeBefore;
+  return { replaced };
 }
 __name(compressMessages, "compressMessages");
 var compressedUpToIndex = 0;
@@ -39521,7 +39542,7 @@ function compressHistoryMessages() {
   let replacedCount = 0;
   for (let i2 = compressedUpToIndex; i2 < end; i2++) {
     const storeBefore = imageStore.size;
-    conversationHistory[i2] = compressMessage(conversationHistory[i2]);
+    compressMessage(conversationHistory[i2]);
     if (imageStore.size > storeBefore) replacedCount++;
   }
   compressedUpToIndex = end;
@@ -39724,8 +39745,8 @@ function handleStepFinish(onProgress, { stepNumber, text: text2, toolCalls, tool
 __name(handleStepFinish, "handleStepFinish");
 function handlePrepareStep({ messages, stepNumber, steps }) {
   if (stepNumber === 0) return void 0;
-  const { messages: compressed, replaced } = compressMessages(messages, 2);
-  let newMessages = replaced > 0 ? compressed : [...messages];
+  const { replaced } = compressMessages(messages, 2);
+  let newMessages = messages;
   if (replaced > 0) {
     console.log(`[Agent] prepareStep(${stepNumber}): compressed ${replaced} image(s) (imageStore size: ${imageStore.size})`);
   }
@@ -39763,9 +39784,10 @@ ${historySummary}`
       }
     }
   }
+  const modified = replaced > 0 || newMessages !== messages;
   const lastMsg = newMessages[newMessages.length - 1];
   if (!lastMsg || lastMsg.role !== "tool") {
-    return replaced > 0 ? { messages: newMessages } : void 0;
+    return modified ? { messages: newMessages } : void 0;
   }
   const imageParts = [];
   const patchedContent = [];
