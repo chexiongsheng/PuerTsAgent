@@ -17,6 +17,11 @@ var description = `
   - \`direction\` (string): \`'up'\` / \`'down'\` for pitch, \`'left'\` / \`'right'\` for yaw.
   - \`amount\` (number, default 1): Orbit intensity (0.1\u201324), each unit \u2248 15 degrees.
   - Returns a Promise that resolves to the result description string.
+
+- **\`getSceneViewState()\`** \u2014 Get the current Scene view camera state (synchronous).
+  - Returns an object: \`{ success: boolean, pivot: {x,y,z}, rotation: {x,y,z,w}, eulerAngles: {x,y,z}, size: number, orthographic: boolean }\`.
+  - Access properties directly, e.g. \`getSceneViewState().pivot.x\`.
+  - Use this to check the current camera position/rotation/zoom before or after manipulation.
 `.trim();
 function manipulateSceneViewPromise(operation, direction, amount) {
   return new Promise((resolve, reject) => {
@@ -56,9 +61,15 @@ async function sceneViewOrbit(direction, amount = 1) {
   return doManipulate("orbit", direction, amount);
 }
 __name(sceneViewOrbit, "sceneViewOrbit");
+function getSceneViewState() {
+  const json = CS.LLMAgent.ScreenCaptureBridge.GetSceneViewState();
+  return JSON.parse(json);
+}
+__name(getSceneViewState, "getSceneViewState");
 globalThis.sceneViewZoom = sceneViewZoom;
 globalThis.sceneViewPan = sceneViewPan;
 globalThis.sceneViewOrbit = sceneViewOrbit;
+globalThis.getSceneViewState = getSceneViewState;
 export {
   description
 };

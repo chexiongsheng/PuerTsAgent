@@ -209,6 +209,35 @@ namespace LLMAgent
         }
 
         /// <summary>
+        /// Get the current Scene view camera state (pivot, rotation, size).
+        /// Only available in the Unity Editor.
+        /// </summary>
+        /// <returns>JSON string with scene view state</returns>
+        public static string GetSceneViewState()
+        {
+#if UNITY_EDITOR
+            SceneView sceneView = SceneView.lastActiveSceneView;
+            if (sceneView == null)
+            {
+                return BuildErrorJson("No active Scene view found.");
+            }
+
+            var pivot = sceneView.pivot;
+            var rotation = sceneView.rotation;
+            var euler = rotation.eulerAngles;
+            float size = sceneView.size;
+            bool ortho = sceneView.orthographic;
+
+            return $"{{\"success\":true,\"pivot\":{{\"x\":{pivot.x:F3},\"y\":{pivot.y:F3},\"z\":{pivot.z:F3}}}," +
+                   $"\"rotation\":{{\"x\":{rotation.x:F4},\"y\":{rotation.y:F4},\"z\":{rotation.z:F4},\"w\":{rotation.w:F4}}}," +
+                   $"\"eulerAngles\":{{\"x\":{euler.x:F1},\"y\":{euler.y:F1},\"z\":{euler.z:F1}}}," +
+                   $"\"size\":{size:F3},\"orthographic\":{(ortho ? "true" : "false")}}}";
+#else
+            return BuildErrorJson("Scene view state is only available in the Unity Editor.");
+#endif
+        }
+
+        /// <summary>
         /// Manipulate the Scene view camera: zoom, pan, or orbit.
         /// Only available in the Unity Editor.
         /// </summary>

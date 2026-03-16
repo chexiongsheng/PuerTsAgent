@@ -347,6 +347,7 @@
             public static CaptureScreenAsync ($maxWidth: number, $maxHeight: number, $callback: System.Action$1<string>) : void
             public static CaptureSceneViewAsync ($maxWidth: number, $maxHeight: number, $callback: System.Action$1<string>) : void
             public static ManipulateSceneView ($operation: string, $direction: string, $amount: number, $callback: System.Action$1<string>) : void
+            public static GetSceneViewState () : string
         }
         class TypeReflectionBridge extends System.Object
         {
