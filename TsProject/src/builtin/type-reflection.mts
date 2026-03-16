@@ -9,7 +9,13 @@
  * Backed by C# TypeReflectionBridge which uses System.Reflection with caching.
  */
 
-// ---- Description for tool description ----
+// ---- Summary for tool description (always in context) ----
+
+export const summary = `**type-reflection** — C# type introspection via reflection.
+Functions: \`listNamespaces\`, \`listTypesInNamespace\`, \`getTypeDetails\`.
+Use \`await import('LLMAgent/builtin/type-reflection.mjs')\` to access. **You MUST read \`.description\` before first use to get correct parameter signatures; wrong arguments will throw an error.**`;
+
+// ---- Description for on-demand access via import ----
 
 export const description = `
 - **\`listNamespaces()\`** — List all C# namespaces available across all loaded assemblies.
@@ -31,7 +37,7 @@ export const description = `
 /**
  * List all C# namespaces found across all loaded assemblies in the Unity runtime.
  */
-function listNamespaces(): any {
+export function listNamespaces(): any {
     const json = CS.LLMAgent.TypeReflectionBridge.GetAllNamespaces();
     return JSON.parse(json);
 }
@@ -41,7 +47,10 @@ function listNamespaces(): any {
  * under one or more C# namespaces.
  * @param namespaces Comma-separated namespace names, e.g. "UnityEngine,UnityEngine.UI"
  */
-function listTypesInNamespace(namespaces: string): any {
+export function listTypesInNamespace(namespaces: string): any {
+    if (typeof namespaces !== 'string' || namespaces.trim() === '') {
+        throw new Error(`listTypesInNamespace: 'namespaces' must be a non-empty string (got ${JSON.stringify(namespaces)}). Read module.description for usage.`);
+    }
     const json = CS.LLMAgent.TypeReflectionBridge.GetTypesInNamespaces(namespaces);
     return JSON.parse(json);
 }
@@ -51,12 +60,10 @@ function listTypesInNamespace(namespaces: string): any {
  * properties, methods, fields, interfaces, base type, and enum values.
  * @param typeNames Comma-separated fully-qualified type names, e.g. "UnityEngine.Transform"
  */
-function getTypeDetails(typeNames: string): any {
+export function getTypeDetails(typeNames: string): any {
+    if (typeof typeNames !== 'string' || typeNames.trim() === '') {
+        throw new Error(`getTypeDetails: 'typeNames' must be a non-empty string (got ${JSON.stringify(typeNames)}). Read module.description for usage.`);
+    }
     const json = CS.LLMAgent.TypeReflectionBridge.GetTypeDetails(typeNames);
     return JSON.parse(json);
 }
-
-// Register as globals in the eval VM
-(globalThis as any).listNamespaces = listNamespaces;
-(globalThis as any).listTypesInNamespace = listTypesInNamespace;
-(globalThis as any).getTypeDetails = getTypeDetails;

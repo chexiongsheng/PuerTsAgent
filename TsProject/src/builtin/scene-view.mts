@@ -15,7 +15,13 @@
  * Backed by C# ScreenCaptureBridge.
  */
 
-// ---- Description for tool description ----
+// ---- Summary for tool description (always in context) ----
+
+export const summary = `**scene-view** — Scene view camera control & scene manipulation.
+Functions: \`sceneViewZoom\`, \`sceneViewPan\`, \`sceneViewOrbit\`, \`getSceneViewState\`, \`setSceneViewCamera\`, \`focusSceneViewOn\`, \`getGameObjectHierarchy\`, \`selectGameObject\`, \`saveScene\`.
+Use \`await import('LLMAgent/builtin/scene-view.mjs')\` to access. **You MUST read \`.description\` before first use to get correct parameter signatures; wrong arguments will throw an error.**`;
+
+// ---- Description for on-demand access via import ----
 
 export const description = `
 - **\`sceneViewZoom(direction, amount?)\`** — Zoom the Scene view camera in or out (like mouse scroll wheel).
@@ -114,7 +120,14 @@ async function doManipulate(operation: string, direction: string, amount: number
  * @param direction 'forward' | 'in' | 'backward' | 'out'
  * @param amount Zoom intensity (0.1-20, default 1)
  */
-async function sceneViewZoom(direction: string, amount: number = 1): Promise<string> {
+export async function sceneViewZoom(direction: string, amount: number = 1): Promise<string> {
+    const validDirections = ['forward', 'in', 'backward', 'out'];
+    if (typeof direction !== 'string' || !validDirections.includes(direction)) {
+        throw new Error(`sceneViewZoom: 'direction' must be one of ${validDirections.join(', ')} (got ${JSON.stringify(direction)}). Read module.description for usage.`);
+    }
+    if (typeof amount !== 'number' || amount < 0.1 || amount > 20) {
+        throw new Error(`sceneViewZoom: 'amount' must be a number between 0.1 and 20 (got ${JSON.stringify(amount)}). Read module.description for usage.`);
+    }
     return doManipulate('zoom', direction, amount);
 }
 
@@ -123,7 +136,14 @@ async function sceneViewZoom(direction: string, amount: number = 1): Promise<str
  * @param direction 'up' | 'down' | 'left' | 'right'
  * @param amount Pan distance multiplier (0.1-50, default 1)
  */
-async function sceneViewPan(direction: string, amount: number = 1): Promise<string> {
+export async function sceneViewPan(direction: string, amount: number = 1): Promise<string> {
+    const validDirections = ['up', 'down', 'left', 'right'];
+    if (typeof direction !== 'string' || !validDirections.includes(direction)) {
+        throw new Error(`sceneViewPan: 'direction' must be one of ${validDirections.join(', ')} (got ${JSON.stringify(direction)}). Read module.description for usage.`);
+    }
+    if (typeof amount !== 'number' || amount < 0.1 || amount > 50) {
+        throw new Error(`sceneViewPan: 'amount' must be a number between 0.1 and 50 (got ${JSON.stringify(amount)}). Read module.description for usage.`);
+    }
     return doManipulate('pan', direction, amount);
 }
 
@@ -132,7 +152,14 @@ async function sceneViewPan(direction: string, amount: number = 1): Promise<stri
  * @param direction 'up' | 'down' | 'left' | 'right'
  * @param amount Orbit intensity (0.1-24, default 1)
  */
-async function sceneViewOrbit(direction: string, amount: number = 1): Promise<string> {
+export async function sceneViewOrbit(direction: string, amount: number = 1): Promise<string> {
+    const validDirections = ['up', 'down', 'left', 'right'];
+    if (typeof direction !== 'string' || !validDirections.includes(direction)) {
+        throw new Error(`sceneViewOrbit: 'direction' must be one of ${validDirections.join(', ')} (got ${JSON.stringify(direction)}). Read module.description for usage.`);
+    }
+    if (typeof amount !== 'number' || amount < 0.1 || amount > 24) {
+        throw new Error(`sceneViewOrbit: 'amount' must be a number between 0.1 and 24 (got ${JSON.stringify(amount)}). Read module.description for usage.`);
+    }
     return doManipulate('orbit', direction, amount);
 }
 
@@ -150,7 +177,7 @@ interface SceneViewState {
  * Get the current Scene view camera state (pivot, rotation, size).
  * Returns a JS object that can be accessed directly.
  */
-function getSceneViewState(): SceneViewState {
+export function getSceneViewState(): SceneViewState {
     const json = CS.LLMAgent.ScreenCaptureBridge.GetSceneViewState();
     return JSON.parse(json);
 }
@@ -169,11 +196,26 @@ interface Vector3Like {
  * @param rotation Euler angles {x,y,z} in degrees (optional)
  * @param size Zoom level (optional, 0 = keep current)
  */
-function setSceneViewCamera(
+export function setSceneViewCamera(
     pivot?: Vector3Like,
     rotation?: Vector3Like,
     size?: number
 ): any {
+    if (pivot !== undefined && pivot !== null) {
+        if (typeof pivot !== 'object' || typeof pivot.x !== 'number' || typeof pivot.y !== 'number' || typeof pivot.z !== 'number') {
+            throw new Error(`setSceneViewCamera: 'pivot' must be an object {x, y, z} with numeric values (got ${JSON.stringify(pivot)}). Read module.description for usage.`);
+        }
+    }
+    if (rotation !== undefined && rotation !== null) {
+        if (typeof rotation !== 'object' || typeof rotation.x !== 'number' || typeof rotation.y !== 'number' || typeof rotation.z !== 'number') {
+            throw new Error(`setSceneViewCamera: 'rotation' must be an object {x, y, z} with numeric euler angles (got ${JSON.stringify(rotation)}). Read module.description for usage.`);
+        }
+    }
+    if (size !== undefined && size !== null) {
+        if (typeof size !== 'number' || size < 0) {
+            throw new Error(`setSceneViewCamera: 'size' must be a non-negative number (got ${JSON.stringify(size)}). Read module.description for usage.`);
+        }
+    }
     const json = CS.LLMAgent.ScreenCaptureBridge.SetSceneViewCamera(
         pivot?.x ?? 0, pivot?.y ?? 0, pivot?.z ?? 0, !!pivot,
         rotation?.x ?? 0, rotation?.y ?? 0, rotation?.z ?? 0, !!rotation,
@@ -186,7 +228,10 @@ function setSceneViewCamera(
  * Focus the Scene view on a specific GameObject (like pressing F in the Editor).
  * @param gameObjectName Name of the GameObject to focus on
  */
-function focusSceneViewOn(gameObjectName: string): any {
+export function focusSceneViewOn(gameObjectName: string): any {
+    if (typeof gameObjectName !== 'string' || gameObjectName.trim() === '') {
+        throw new Error(`focusSceneViewOn: 'gameObjectName' must be a non-empty string (got ${JSON.stringify(gameObjectName)}). Read module.description for usage.`);
+    }
     const json = CS.LLMAgent.ScreenCaptureBridge.FocusSceneViewOn(gameObjectName);
     return JSON.parse(json);
 }
@@ -196,7 +241,13 @@ function focusSceneViewOn(gameObjectName: string): any {
  * @param name Root GameObject name (empty = all roots in active scene)
  * @param depth Max traversal depth (0 = unlimited)
  */
-function getGameObjectHierarchy(name?: string, depth?: number): any {
+export function getGameObjectHierarchy(name?: string, depth?: number): any {
+    if (name !== undefined && name !== null && typeof name !== 'string') {
+        throw new Error(`getGameObjectHierarchy: 'name' must be a string or omitted (got ${JSON.stringify(name)}). Read module.description for usage.`);
+    }
+    if (depth !== undefined && depth !== null && (typeof depth !== 'number' || depth < 0)) {
+        throw new Error(`getGameObjectHierarchy: 'depth' must be a non-negative number or omitted (got ${JSON.stringify(depth)}). Read module.description for usage.`);
+    }
     const json = CS.LLMAgent.ScreenCaptureBridge.GetGameObjectHierarchy(name ?? '', depth ?? 0);
     return JSON.parse(json);
 }
@@ -205,7 +256,10 @@ function getGameObjectHierarchy(name?: string, depth?: number): any {
  * Select a GameObject in the Unity Editor.
  * @param name Name of the GameObject to select
  */
-function selectGameObject(name: string): any {
+export function selectGameObject(name: string): any {
+    if (typeof name !== 'string' || name.trim() === '') {
+        throw new Error(`selectGameObject: 'name' must be a non-empty string (got ${JSON.stringify(name)}). Read module.description for usage.`);
+    }
     const json = CS.LLMAgent.ScreenCaptureBridge.SelectGameObject(name);
     return JSON.parse(json);
 }
@@ -213,18 +267,7 @@ function selectGameObject(name: string): any {
 /**
  * Save the current active scene to disk.
  */
-function saveScene(): any {
+export function saveScene(): any {
     const json = CS.LLMAgent.ScreenCaptureBridge.SaveScene();
     return JSON.parse(json);
 }
-
-// Register as globals in the eval VM
-(globalThis as any).sceneViewZoom = sceneViewZoom;
-(globalThis as any).sceneViewPan = sceneViewPan;
-(globalThis as any).sceneViewOrbit = sceneViewOrbit;
-(globalThis as any).getSceneViewState = getSceneViewState;
-(globalThis as any).setSceneViewCamera = setSceneViewCamera;
-(globalThis as any).focusSceneViewOn = focusSceneViewOn;
-(globalThis as any).getGameObjectHierarchy = getGameObjectHierarchy;
-(globalThis as any).selectGameObject = selectGameObject;
-(globalThis as any).saveScene = saveScene;

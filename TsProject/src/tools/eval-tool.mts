@@ -8,12 +8,12 @@ import { tool } from 'ai';
 import { z } from 'zod';
 
 // The eval VM (jsEnv) is created once at module load time so that:
-// 1. Builtin modules are loaded via ExecuteModule (which registers global helper functions).
-// 2. The descriptions extracted from builtin modules can be included in the tool description.
+// 1. Builtin modules are loaded via ExecuteModule (making them available for dynamic import).
+// 2. The summaries extracted from builtin modules can be included in the tool description.
 const jsEnv: CS.Puerts.ScriptEnv = CS.LLMAgent.ScriptEnvBridge.CreateJavaScriptEnv();
 
-// Load all builtin modules into the eval VM and collect their descriptions.
-const builtinDescriptions: string[] = (() => {
+// Load all builtin modules into the eval VM and collect their summaries.
+const builtinSummaries: string[] = (() => {
     const csArray = CS.LLMAgent.ScriptEnvBridge.LoadBuiltinModules(jsEnv);
     const result: string[] = [];
     for (let i = 0; i < csArray.Length; i++) {
@@ -22,11 +22,15 @@ const builtinDescriptions: string[] = (() => {
     return result;
 })();
 
-/** Builtin helper function descriptions, joined for inclusion in the tool description. */
-export const builtinDescriptionsText: string = builtinDescriptions.length > 0
-    ? '\n\n### Built-in Helper Functions\n\n' +
-      'The following utility functions are pre-loaded in the evalJsCode VM and can be called directly inside your `execute()` function:\n\n' +
-      builtinDescriptions.join('\n\n')
+/** Builtin helper module summaries, joined for inclusion in the tool description. */
+export const builtinSummariesText: string = builtinSummaries.length > 0
+    ? '\n\n### Built-in Helper Modules\n\n' +
+      'The following helper modules are available in the evalJsCode VM. ' +
+      'Use ESM dynamic `import()` to access their functions (e.g. `const sv = await import(\'LLMAgent/builtin/scene-view.mjs\'); sv.focusSceneViewOn(\'Main Camera\');`). ' +
+      '**IMPORTANT**: Before calling ANY module function for the first time, you MUST first import the module and read its `.description` export to learn the correct parameter signatures. ' +
+      'All functions validate their arguments at runtime and will throw descriptive errors if called with wrong parameters. ' +
+      'Do NOT guess function signatures from the function name alone.\n\n' +
+      builtinSummaries.join('\n\n')
     : '';
 
 // Fixed runner code that calls the globally defined execute() function,
@@ -75,7 +79,7 @@ export function createEvalTools() {
                 'On success the response is `{ success: true, result: string }`. ' +
                 'On failure the response is `{ success: false, error: string, stack: string }`.\n\n' +
                 'Use console.log() for debug output (it goes to the Unity console).' +
-                builtinDescriptionsText,
+                builtinSummariesText,
             inputSchema: z.object({
                 code: z
                     .string()

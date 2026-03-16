@@ -4,7 +4,7 @@ var __name = (target, value) => __defProp(target, "name", { value, configurable:
 // src/builtin/type-reflection.mts
 var summary = `**type-reflection** \u2014 C# type introspection via reflection.
 Functions: \`listNamespaces\`, \`listTypesInNamespace\`, \`getTypeDetails\`.
-Use \`await import('LLMAgent/builtin/type-reflection.mjs')\` to access; read \`.description\` for detailed usage.`;
+Use \`await import('LLMAgent/builtin/type-reflection.mjs')\` to access. **You MUST read \`.description\` before first use to get correct parameter signatures; wrong arguments will throw an error.**`;
 var description = `
 - **\`listNamespaces()\`** \u2014 List all C# namespaces available across all loaded assemblies.
   - Returns a parsed JSON object with a \`namespaces\` array of namespace name strings.
@@ -25,11 +25,17 @@ function listNamespaces() {
 }
 __name(listNamespaces, "listNamespaces");
 function listTypesInNamespace(namespaces) {
+  if (typeof namespaces !== "string" || namespaces.trim() === "") {
+    throw new Error(`listTypesInNamespace: 'namespaces' must be a non-empty string (got ${JSON.stringify(namespaces)}). Read module.description for usage.`);
+  }
   const json = CS.LLMAgent.TypeReflectionBridge.GetTypesInNamespaces(namespaces);
   return JSON.parse(json);
 }
 __name(listTypesInNamespace, "listTypesInNamespace");
 function getTypeDetails(typeNames) {
+  if (typeof typeNames !== "string" || typeNames.trim() === "") {
+    throw new Error(`getTypeDetails: 'typeNames' must be a non-empty string (got ${JSON.stringify(typeNames)}). Read module.description for usage.`);
+  }
   const json = CS.LLMAgent.TypeReflectionBridge.GetTypeDetails(typeNames);
   return JSON.parse(json);
 }

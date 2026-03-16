@@ -4,7 +4,7 @@ var __name = (target, value) => __defProp(target, "name", { value, configurable:
 // src/builtin/scene-view.mts
 var summary = `**scene-view** \u2014 Scene view camera control & scene manipulation.
 Functions: \`sceneViewZoom\`, \`sceneViewPan\`, \`sceneViewOrbit\`, \`getSceneViewState\`, \`setSceneViewCamera\`, \`focusSceneViewOn\`, \`getGameObjectHierarchy\`, \`selectGameObject\`, \`saveScene\`.
-Use \`await import('LLMAgent/builtin/scene-view.mjs')\` to access; read \`.description\` for detailed usage.`;
+Use \`await import('LLMAgent/builtin/scene-view.mjs')\` to access. **You MUST read \`.description\` before first use to get correct parameter signatures; wrong arguments will throw an error.**`;
 var description = `
 - **\`sceneViewZoom(direction, amount?)\`** \u2014 Zoom the Scene view camera in or out (like mouse scroll wheel).
   - \`direction\` (string): \`'forward'\` / \`'in'\` to zoom closer, \`'backward'\` / \`'out'\` to zoom farther.
@@ -78,14 +78,35 @@ async function doManipulate(operation, direction, amount) {
 }
 __name(doManipulate, "doManipulate");
 async function sceneViewZoom(direction, amount = 1) {
+  const validDirections = ["forward", "in", "backward", "out"];
+  if (typeof direction !== "string" || !validDirections.includes(direction)) {
+    throw new Error(`sceneViewZoom: 'direction' must be one of ${validDirections.join(", ")} (got ${JSON.stringify(direction)}). Read module.description for usage.`);
+  }
+  if (typeof amount !== "number" || amount < 0.1 || amount > 20) {
+    throw new Error(`sceneViewZoom: 'amount' must be a number between 0.1 and 20 (got ${JSON.stringify(amount)}). Read module.description for usage.`);
+  }
   return doManipulate("zoom", direction, amount);
 }
 __name(sceneViewZoom, "sceneViewZoom");
 async function sceneViewPan(direction, amount = 1) {
+  const validDirections = ["up", "down", "left", "right"];
+  if (typeof direction !== "string" || !validDirections.includes(direction)) {
+    throw new Error(`sceneViewPan: 'direction' must be one of ${validDirections.join(", ")} (got ${JSON.stringify(direction)}). Read module.description for usage.`);
+  }
+  if (typeof amount !== "number" || amount < 0.1 || amount > 50) {
+    throw new Error(`sceneViewPan: 'amount' must be a number between 0.1 and 50 (got ${JSON.stringify(amount)}). Read module.description for usage.`);
+  }
   return doManipulate("pan", direction, amount);
 }
 __name(sceneViewPan, "sceneViewPan");
 async function sceneViewOrbit(direction, amount = 1) {
+  const validDirections = ["up", "down", "left", "right"];
+  if (typeof direction !== "string" || !validDirections.includes(direction)) {
+    throw new Error(`sceneViewOrbit: 'direction' must be one of ${validDirections.join(", ")} (got ${JSON.stringify(direction)}). Read module.description for usage.`);
+  }
+  if (typeof amount !== "number" || amount < 0.1 || amount > 24) {
+    throw new Error(`sceneViewOrbit: 'amount' must be a number between 0.1 and 24 (got ${JSON.stringify(amount)}). Read module.description for usage.`);
+  }
   return doManipulate("orbit", direction, amount);
 }
 __name(sceneViewOrbit, "sceneViewOrbit");
@@ -95,6 +116,21 @@ function getSceneViewState() {
 }
 __name(getSceneViewState, "getSceneViewState");
 function setSceneViewCamera(pivot, rotation, size) {
+  if (pivot !== void 0 && pivot !== null) {
+    if (typeof pivot !== "object" || typeof pivot.x !== "number" || typeof pivot.y !== "number" || typeof pivot.z !== "number") {
+      throw new Error(`setSceneViewCamera: 'pivot' must be an object {x, y, z} with numeric values (got ${JSON.stringify(pivot)}). Read module.description for usage.`);
+    }
+  }
+  if (rotation !== void 0 && rotation !== null) {
+    if (typeof rotation !== "object" || typeof rotation.x !== "number" || typeof rotation.y !== "number" || typeof rotation.z !== "number") {
+      throw new Error(`setSceneViewCamera: 'rotation' must be an object {x, y, z} with numeric euler angles (got ${JSON.stringify(rotation)}). Read module.description for usage.`);
+    }
+  }
+  if (size !== void 0 && size !== null) {
+    if (typeof size !== "number" || size < 0) {
+      throw new Error(`setSceneViewCamera: 'size' must be a non-negative number (got ${JSON.stringify(size)}). Read module.description for usage.`);
+    }
+  }
   const json = CS.LLMAgent.ScreenCaptureBridge.SetSceneViewCamera(
     pivot?.x ?? 0,
     pivot?.y ?? 0,
@@ -110,16 +146,28 @@ function setSceneViewCamera(pivot, rotation, size) {
 }
 __name(setSceneViewCamera, "setSceneViewCamera");
 function focusSceneViewOn(gameObjectName) {
+  if (typeof gameObjectName !== "string" || gameObjectName.trim() === "") {
+    throw new Error(`focusSceneViewOn: 'gameObjectName' must be a non-empty string (got ${JSON.stringify(gameObjectName)}). Read module.description for usage.`);
+  }
   const json = CS.LLMAgent.ScreenCaptureBridge.FocusSceneViewOn(gameObjectName);
   return JSON.parse(json);
 }
 __name(focusSceneViewOn, "focusSceneViewOn");
 function getGameObjectHierarchy(name, depth) {
+  if (name !== void 0 && name !== null && typeof name !== "string") {
+    throw new Error(`getGameObjectHierarchy: 'name' must be a string or omitted (got ${JSON.stringify(name)}). Read module.description for usage.`);
+  }
+  if (depth !== void 0 && depth !== null && (typeof depth !== "number" || depth < 0)) {
+    throw new Error(`getGameObjectHierarchy: 'depth' must be a non-negative number or omitted (got ${JSON.stringify(depth)}). Read module.description for usage.`);
+  }
   const json = CS.LLMAgent.ScreenCaptureBridge.GetGameObjectHierarchy(name ?? "", depth ?? 0);
   return JSON.parse(json);
 }
 __name(getGameObjectHierarchy, "getGameObjectHierarchy");
 function selectGameObject(name) {
+  if (typeof name !== "string" || name.trim() === "") {
+    throw new Error(`selectGameObject: 'name' must be a non-empty string (got ${JSON.stringify(name)}). Read module.description for usage.`);
+  }
   const json = CS.LLMAgent.ScreenCaptureBridge.SelectGameObject(name);
   return JSON.parse(json);
 }

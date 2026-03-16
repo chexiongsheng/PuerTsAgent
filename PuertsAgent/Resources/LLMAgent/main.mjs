@@ -38964,7 +38964,7 @@ var builtinSummaries = (() => {
   }
   return result;
 })();
-var builtinSummariesText = builtinSummaries.length > 0 ? "\n\n### Built-in Helper Modules\n\nThe following helper modules are available in the evalJsCode VM. Use ESM dynamic `import()` to access their functions (e.g. `const sv = await import('LLMAgent/builtin/scene-view.mjs'); sv.focusSceneViewOn('Main Camera');`). Each module also exports a `description` string with detailed usage \u2014 import it and read `module.description` when you need specifics.\n\n" + builtinSummaries.join("\n\n") : "";
+var builtinSummariesText = builtinSummaries.length > 0 ? "\n\n### Built-in Helper Modules\n\nThe following helper modules are available in the evalJsCode VM. Use ESM dynamic `import()` to access their functions (e.g. `const sv = await import('LLMAgent/builtin/scene-view.mjs'); sv.focusSceneViewOn('Main Camera');`). **IMPORTANT**: Before calling ANY module function for the first time, you MUST first import the module and read its `.description` export to learn the correct parameter signatures. All functions validate their arguments at runtime and will throw descriptive errors if called with wrong parameters. Do NOT guess function signatures from the function name alone.\n\n" + builtinSummaries.join("\n\n") : "";
 var RUNNER_CODE = `(function(onFinish) {
     execute().then(function(result) {
         var resultStr;

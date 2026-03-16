@@ -5,7 +5,13 @@
  * These functions are injected as globals when the eval VM is created.
  */
 
-// ---- Description for SYSTEM_PROMPT ----
+// ---- Summary for tool description (always in context) ----
+
+export const summary = `**unity-log** — Unity console log access.
+Functions: \`getUnityLogs\`, \`getUnityLogSummary\`.
+Use \`await import('LLMAgent/builtin/unity-log.mjs')\` to access. **You MUST read \`.description\` before first use to get correct parameter signatures; wrong arguments will throw an error.**`;
+
+// ---- Description for on-demand access via import ----
 
 export const description = `
 - **\`getUnityLogs(count?, logType?)\`** — Get recent Unity console logs.
@@ -38,7 +44,14 @@ interface LogSummary {
  * @param count Number of log entries to retrieve (default 20, range 1-50)
  * @param logType Filter by type: 'all', 'error', 'warning', or 'log' (default 'all')
  */
-function getUnityLogs(count: number = 20, logType: string = 'all'): LogEntry[] {
+export function getUnityLogs(count: number = 20, logType: string = 'all'): LogEntry[] {
+    if (typeof count !== 'number' || count < 1 || count > 50 || !Number.isInteger(count)) {
+        throw new Error(`getUnityLogs: 'count' must be an integer between 1 and 50 (got ${JSON.stringify(count)}). Read module.description for usage.`);
+    }
+    const validTypes = ['all', 'error', 'warning', 'log'];
+    if (typeof logType !== 'string' || !validTypes.includes(logType)) {
+        throw new Error(`getUnityLogs: 'logType' must be one of ${validTypes.join(', ')} (got ${JSON.stringify(logType)}). Read module.description for usage.`);
+    }
     const logsJson = CS.LLMAgent.UnityLogBridge.GetRecentLogs(count, logType);
     return JSON.parse(logsJson);
 }
@@ -46,12 +59,7 @@ function getUnityLogs(count: number = 20, logType: string = 'all'): LogEntry[] {
 /**
  * Get a summary count of Unity logs by type.
  */
-function getUnityLogSummary(): LogSummary {
+export function getUnityLogSummary(): LogSummary {
     const summaryJson = CS.LLMAgent.UnityLogBridge.GetLogSummary();
     return JSON.parse(summaryJson);
 }
-
-// Make functions available on globalThis so they persist as globals in the eval VM.
-// (In IIFE output, local declarations are scoped; we need explicit global assignment.)
-(globalThis as any).getUnityLogs = getUnityLogs;
-(globalThis as any).getUnityLogSummary = getUnityLogSummary;
