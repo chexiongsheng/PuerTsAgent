@@ -87,42 +87,73 @@
         class Array extends System.Object implements System.Collections.IStructuralComparable, System.Collections.IStructuralEquatable, System.ICloneable, System.Collections.ICollection, System.Collections.IEnumerable, System.Collections.IList
         {
             protected [__keep_incompatibility]: never;
+            public get LongLength(): bigint;
+            public get IsFixedSize(): boolean;
+            public get IsReadOnly(): boolean;
+            public get IsSynchronized(): boolean;
+            public get SyncRoot(): any;
+            public get Length(): number;
+            public get Rank(): number;
+            public static CreateInstance ($elementType: System.Type, ...lengths: bigint[]) : System.Array
+            public CopyTo ($array: System.Array, $index: number) : void
+            public Clone () : any
+            public static BinarySearch ($array: System.Array, $value: any) : number
+            public static Copy ($sourceArray: System.Array, $destinationArray: System.Array, $length: bigint) : void
+            public static Copy ($sourceArray: System.Array, $sourceIndex: bigint, $destinationArray: System.Array, $destinationIndex: bigint, $length: bigint) : void
+            public CopyTo ($array: System.Array, $index: bigint) : void
+            public GetLongLength ($dimension: number) : bigint
+            public GetValue ($index: bigint) : any
+            public GetValue ($index1: bigint, $index2: bigint) : any
+            public GetValue ($index1: bigint, $index2: bigint, $index3: bigint) : any
+            public GetValue (...indices: bigint[]) : any
+            public static BinarySearch ($array: System.Array, $index: number, $length: number, $value: any) : number
+            public static BinarySearch ($array: System.Array, $value: any, $comparer: System.Collections.IComparer) : number
+            public static BinarySearch ($array: System.Array, $index: number, $length: number, $value: any, $comparer: System.Collections.IComparer) : number
+            public static IndexOf ($array: System.Array, $value: any) : number
+            public static IndexOf ($array: System.Array, $value: any, $startIndex: number) : number
+            public static IndexOf ($array: System.Array, $value: any, $startIndex: number, $count: number) : number
+            public static LastIndexOf ($array: System.Array, $value: any) : number
+            public static LastIndexOf ($array: System.Array, $value: any, $startIndex: number) : number
+            public static LastIndexOf ($array: System.Array, $value: any, $startIndex: number, $count: number) : number
+            public static Reverse ($array: System.Array) : void
+            public static Reverse ($array: System.Array, $index: number, $length: number) : void
+            public SetValue ($value: any, $index: bigint) : void
+            public SetValue ($value: any, $index1: bigint, $index2: bigint) : void
+            public SetValue ($value: any, $index1: bigint, $index2: bigint, $index3: bigint) : void
+            public SetValue ($value: any, ...indices: bigint[]) : void
+            public static Sort ($array: System.Array) : void
+            public static Sort ($array: System.Array, $index: number, $length: number) : void
+            public static Sort ($array: System.Array, $comparer: System.Collections.IComparer) : void
+            public static Sort ($array: System.Array, $index: number, $length: number, $comparer: System.Collections.IComparer) : void
+            public static Sort ($keys: System.Array, $items: System.Array) : void
+            public static Sort ($keys: System.Array, $items: System.Array, $comparer: System.Collections.IComparer) : void
+            public static Sort ($keys: System.Array, $items: System.Array, $index: number, $length: number) : void
+            public static Sort ($keys: System.Array, $items: System.Array, $index: number, $length: number, $comparer: System.Collections.IComparer) : void
+            public GetEnumerator () : System.Collections.IEnumerator
+            public GetLength ($dimension: number) : number
+            public GetLowerBound ($dimension: number) : number
+            public GetValue (...indices: number[]) : any
+            public SetValue ($value: any, ...indices: number[]) : void
+            public GetUpperBound ($dimension: number) : number
+            public GetValue ($index: number) : any
+            public GetValue ($index1: number, $index2: number) : any
+            public GetValue ($index1: number, $index2: number, $index3: number) : any
+            public SetValue ($value: any, $index: number) : void
+            public SetValue ($value: any, $index1: number, $index2: number) : void
+            public SetValue ($value: any, $index1: number, $index2: number, $index3: number) : void
+            public static CreateInstance ($elementType: System.Type, $length: number) : System.Array
+            public static CreateInstance ($elementType: System.Type, $length1: number, $length2: number) : System.Array
+            public static CreateInstance ($elementType: System.Type, $length1: number, $length2: number, $length3: number) : System.Array
+            public static CreateInstance ($elementType: System.Type, ...lengths: number[]) : System.Array
+            public static CreateInstance ($elementType: System.Type, $lengths: System.Array$1<number>, $lowerBounds: System.Array$1<number>) : System.Array
+            public static Clear ($array: System.Array, $index: number, $length: number) : void
+            public static Copy ($sourceArray: System.Array, $destinationArray: System.Array, $length: number) : void
+            public static Copy ($sourceArray: System.Array, $sourceIndex: number, $destinationArray: System.Array, $destinationIndex: number, $length: number) : void
+            public static ConstrainedCopy ($sourceArray: System.Array, $sourceIndex: number, $destinationArray: System.Array, $destinationIndex: number, $length: number) : void
+            public Initialize () : void
         }
         interface IFormatProvider
         {
-        }
-        interface Action$2<T1, T2>
-        { 
-        (arg1: T1, arg2: T2) : void; 
-        Invoke?: (arg1: T1, arg2: T2) => void;
-        }
-        interface IAsyncResult
-        {
-        }
-        interface AsyncCallback
-        { 
-        (ar: System.IAsyncResult) : void; 
-        Invoke?: (ar: System.IAsyncResult) => void;
-        }
-        var AsyncCallback: { new (func: (ar: System.IAsyncResult) => void): AsyncCallback; }
-        class IntPtr extends System.ValueType implements System.Runtime.Serialization.ISerializable, System.IEquatable$1<System.IntPtr>
-        {
-            protected [__keep_incompatibility]: never;
-        }
-        interface Func$2<T, TResult>
-        { 
-        (arg: T) : TResult; 
-        Invoke?: (arg: T) => TResult;
-        }
-        interface Func$3<T1, T2, TResult>
-        { 
-        (arg1: T1, arg2: T2) : TResult; 
-        Invoke?: (arg1: T1, arg2: T2) => TResult;
-        }
-        interface Func$1<TResult>
-        { 
-        () : TResult; 
-        Invoke?: () => TResult;
         }
         class Type extends System.Reflection.MemberInfo implements System.Runtime.InteropServices._MemberInfo, System.Runtime.InteropServices._Type, System.Reflection.ICustomAttributeProvider, System.Reflection.IReflect
         {
@@ -300,6 +331,58 @@
             public static GetTypeFromCLSID ($clsid: System.Guid, $server: string, $throwOnError: boolean) : System.Type
             public static GetTypeFromProgID ($progID: string, $server: string, $throwOnError: boolean) : System.Type
         }
+        class Int64 extends System.ValueType implements System.IFormattable, System.ISpanFormattable, System.IComparable, System.IComparable$1<bigint>, System.IConvertible, System.IEquatable$1<bigint>
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        interface Converter$2<TInput, TOutput>
+        { 
+        (input: TInput) : TOutput; 
+        Invoke?: (input: TInput) => TOutput;
+        }
+        interface Comparison$1<T>
+        { 
+        (x: T, y: T) : number; 
+        Invoke?: (x: T, y: T) => number;
+        }
+        interface Predicate$1<T>
+        { 
+        (obj: T) : boolean; 
+        Invoke?: (obj: T) => boolean;
+        }
+        interface Action$2<T1, T2>
+        { 
+        (arg1: T1, arg2: T2) : void; 
+        Invoke?: (arg1: T1, arg2: T2) => void;
+        }
+        interface IAsyncResult
+        {
+        }
+        interface AsyncCallback
+        { 
+        (ar: System.IAsyncResult) : void; 
+        Invoke?: (ar: System.IAsyncResult) => void;
+        }
+        var AsyncCallback: { new (func: (ar: System.IAsyncResult) => void): AsyncCallback; }
+        class IntPtr extends System.ValueType implements System.Runtime.Serialization.ISerializable, System.IEquatable$1<System.IntPtr>
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        interface Func$2<T, TResult>
+        { 
+        (arg: T) : TResult; 
+        Invoke?: (arg: T) => TResult;
+        }
+        interface Func$3<T1, T2, TResult>
+        { 
+        (arg1: T1, arg2: T2) : TResult; 
+        Invoke?: (arg1: T1, arg2: T2) => TResult;
+        }
+        interface Func$1<TResult>
+        { 
+        () : TResult; 
+        Invoke?: () => TResult;
+        }
         class Enum extends System.ValueType implements System.IFormattable, System.IComparable, System.IConvertible
         {
             protected [__keep_incompatibility]: never;
@@ -387,6 +470,9 @@
         interface ICollection$1<T> extends System.Collections.Generic.IEnumerable$1<T>, System.Collections.IEnumerable
         {
         }
+        interface IComparer$1<T>
+        {
+        }
     }
     namespace System.Collections {
         interface IEnumerable
@@ -402,6 +488,12 @@
         {
         }
         interface IList extends System.Collections.ICollection, System.Collections.IEnumerable
+        {
+        }
+        interface IComparer
+        {
+        }
+        interface IEnumerator
         {
         }
     }
@@ -758,6 +850,13 @@
         }
         interface _AssemblyName
         {
+        }
+    }
+    namespace System.Collections.ObjectModel {
+        class ReadOnlyCollection$1<T> extends System.Object implements System.Collections.Generic.IReadOnlyList$1<T>, System.Collections.ICollection, System.Collections.Generic.IEnumerable$1<T>, System.Collections.IEnumerable, System.Collections.Generic.IList$1<T>, System.Collections.Generic.IReadOnlyCollection$1<T>, System.Collections.IList, System.Collections.Generic.ICollection$1<T>
+        {
+            protected [__keep_incompatibility]: never;
+            public [Symbol.iterator]() : IterableIterator<T>
         }
     }
     namespace System.Security {
