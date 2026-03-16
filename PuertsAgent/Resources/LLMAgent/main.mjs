@@ -39161,7 +39161,7 @@ function buildSystemPrompt(imagePrefix) {
 }
 __name(buildSystemPrompt, "buildSystemPrompt");
 
-// src/agent/agent-core.mts
+// src/agent/image-store.mts
 function randomSuffix(len = 5) {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
   let result = "";
@@ -39208,6 +39208,117 @@ var ImageStore = class {
   }
 };
 var imageStore = new ImageStore();
+var IMAGE_COMPRESS_THRESHOLD = 500;
+function isImageBase64Key(key) {
+  return key === "data" || key === "base64" || key === "image";
+}
+__name(isImageBase64Key, "isImageBase64Key");
+function replaceImageStringsInPlace(obj, parentKey = "") {
+  if (obj === null || obj === void 0) return false;
+  if (Array.isArray(obj)) {
+    let changed = false;
+    for (let i2 = 0; i2 < obj.length; i2++) {
+      const item = obj[i2];
+      if (typeof item === "string") {
+        if (item.length >= IMAGE_COMPRESS_THRESHOLD && isImageBase64Key(parentKey)) {
+          const idx = imageStore.store(item);
+          obj[i2] = imageStore.placeholder(idx, item.length);
+          changed = true;
+        }
+      } else {
+        if (replaceImageStringsInPlace(item, parentKey)) changed = true;
+      }
+    }
+    return changed;
+  }
+  if (typeof obj === "object") {
+    if (obj.type === "image" && typeof obj.image === "string") {
+      return false;
+    }
+    let changed = false;
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (typeof val === "string") {
+        if (val.length >= IMAGE_COMPRESS_THRESHOLD && isImageBase64Key(key)) {
+          const idx = imageStore.store(val);
+          obj[key] = imageStore.placeholder(idx, val.length);
+          changed = true;
+        }
+      } else {
+        if (replaceImageStringsInPlace(val, key)) changed = true;
+      }
+    }
+    return changed;
+  }
+  return false;
+}
+__name(replaceImageStringsInPlace, "replaceImageStringsInPlace");
+function stripOldUserImages(conversationHistory2) {
+  let lastUserIdx = -1;
+  for (let i2 = conversationHistory2.length - 1; i2 >= 0; i2--) {
+    if (conversationHistory2[i2].role === "user") {
+      lastUserIdx = i2;
+      break;
+    }
+  }
+  const indicesWithImages = [];
+  for (let i2 = 0; i2 < conversationHistory2.length; i2++) {
+    const msg = conversationHistory2[i2];
+    if (msg.role !== "user" || !Array.isArray(msg.content)) continue;
+    if (msg.content.some((p2) => p2.type === "image")) {
+      indicesWithImages.push(i2);
+    }
+  }
+  if (indicesWithImages.length === 0) return;
+  const toStrip = indicesWithImages.filter((idx) => idx !== lastUserIdx);
+  for (const idx of toStrip) {
+    const msg = conversationHistory2[idx];
+    let strippedCount = 0;
+    msg.content = msg.content.map((part) => {
+      if (part.type === "image" && typeof part.image === "string") {
+        strippedCount++;
+        const base64Data = part.image;
+        const storeIdx = imageStore.store(base64Data);
+        const placeholder = imageStore.placeholder(storeIdx, base64Data.length);
+        return {
+          type: "text",
+          text: `[User-attached image was removed to save context space. Placeholder: ${placeholder} \u2013 use retrieveImage tool with index ${storeIdx} if you need to see it again.]`
+        };
+      }
+      return part;
+    });
+    if (strippedCount > 0) {
+      console.log(`[Agent] Stripped ${strippedCount} image(s) from older user message at index ${idx}, stored in imageStore`);
+    }
+  }
+}
+__name(stripOldUserImages, "stripOldUserImages");
+function createRetrieveImageTool() {
+  return {
+    retrieveImage: tool({
+      description: "Retrieve the original base64 content of a compressed image placeholder. In conversation history, base64-encoded image data is automatically replaced with compact placeholders to save context space. Call this tool with the index from the placeholder to get the full base64 string.",
+      inputSchema: external_exports.object({
+        index: external_exports.number().int().min(0).describe("The index from the placeholder, e.g. for image_xxxxx(3, 1200), index is 3.")
+      }),
+      execute: /* @__PURE__ */ __name(async ({ index }) => {
+        const content = imageStore.retrieve(index);
+        if (content === null) {
+          return {
+            success: false,
+            error: `No entry found at index ${index}. Valid range: 0-${imageStore.size - 1}.`
+          };
+        }
+        return {
+          success: true,
+          content
+        };
+      }, "execute")
+    })
+  };
+}
+__name(createRetrieveImageTool, "createRetrieveImageTool");
+
+// src/agent/agent-core.mts
 var currentAbortController = null;
 var ENABLE_SLIDING_WINDOW = true;
 var CHARS_PER_TOKEN = 4;
@@ -39251,7 +39362,6 @@ function extractToolErrorMessage(output) {
   return "Unknown error";
 }
 __name(extractToolErrorMessage, "extractToolErrorMessage");
-var compressedUpToIndex = 0;
 function estimateTokens(messages) {
   let totalChars = 0;
   for (const msg of messages) {
@@ -39452,30 +39562,6 @@ ${summary}`
   return { messages: result, trimmed: true };
 }
 __name(trimMessagesByTokenBudget, "trimMessagesByTokenBudget");
-function createRetrieveImageTool() {
-  return {
-    retrieveImage: tool({
-      description: "Retrieve the original base64 content of a compressed image placeholder. In conversation history, base64-encoded image data is automatically replaced with compact placeholders to save context space. Call this tool with the index from the placeholder to get the full base64 string.",
-      inputSchema: external_exports.object({
-        index: external_exports.number().int().min(0).describe("The index from the placeholder, e.g. for image_xxxxx(3, 1200), index is 3.")
-      }),
-      execute: /* @__PURE__ */ __name(async ({ index }) => {
-        const content = imageStore.retrieve(index);
-        if (content === null) {
-          return {
-            success: false,
-            error: `No entry found at index ${index}. Valid range: 0-${imageStore.size - 1}.`
-          };
-        }
-        return {
-          success: true,
-          content
-        };
-      }, "execute")
-    })
-  };
-}
-__name(createRetrieveImageTool, "createRetrieveImageTool");
 function configure(config2) {
   currentConfig = { ...DEFAULT_CONFIG, ...config2 };
   if (!currentConfig.apiKey) {
@@ -39622,41 +39708,11 @@ ${historySummary}`
   return { messages: newMessages };
 }
 __name(handlePrepareStep, "handlePrepareStep");
-function stripOldUserImages() {
-  const indicesWithImages = [];
-  for (let i2 = 0; i2 < conversationHistory.length; i2++) {
-    const msg = conversationHistory[i2];
-    if (msg.role !== "user" || !Array.isArray(msg.content)) continue;
-    if (msg.content.some((p2) => p2.type === "image")) {
-      indicesWithImages.push(i2);
-    }
-  }
-  if (indicesWithImages.length <= 1) return;
-  const toStrip = indicesWithImages.slice(0, -1);
-  for (const idx of toStrip) {
-    const msg = conversationHistory[idx];
-    let strippedCount = 0;
-    msg.content = msg.content.map((part) => {
-      if (part.type === "image" && typeof part.image === "string") {
-        strippedCount++;
-        const base64Data = part.image;
-        const storeIdx = imageStore.store(base64Data);
-        const placeholder = imageStore.placeholder(storeIdx, base64Data.length);
-        return {
-          type: "text",
-          text: `[User-attached image was removed to save context space. Placeholder: ${placeholder} \u2013 use retrieveImage tool with index ${storeIdx} if you need to see it again.]`
-        };
-      }
-      return part;
-    });
-    if (strippedCount > 0) {
-      console.log(`[Agent] Stripped ${strippedCount} image(s) from older user message at index ${idx}, stored in imageStore`);
-    }
-  }
-}
-__name(stripOldUserImages, "stripOldUserImages");
 async function prepareHistory() {
-  stripOldUserImages();
+  for (const msg of conversationHistory) {
+    replaceImageStringsInPlace(msg);
+  }
+  stripOldUserImages(conversationHistory);
   if (ENABLE_SLIDING_WINDOW) {
     const estimated = estimateTokens(conversationHistory);
     if (estimated > MAX_INPUT_TOKENS) {
@@ -39666,7 +39722,6 @@ async function prepareHistory() {
       );
       if (didTrim) {
         conversationHistory = trimmed;
-        compressedUpToIndex = conversationHistory.length;
       }
     }
   }
@@ -39715,7 +39770,6 @@ async function sendMessage(userMessage, imageBase64, imageMimeType, onProgress) 
   if (!isConfigured || !currentConfig.apiKey) {
     return "[Agent] Not configured. Please set API key first via the Settings panel.";
   }
-  await prepareHistory();
   if (imageBase64 && imageMimeType) {
     console.log(`[Agent] Message includes attached image (${imageMimeType}, ${imageBase64.length} base64 chars)`);
     conversationHistory.push({
@@ -39738,6 +39792,7 @@ async function sendMessage(userMessage, imageBase64, imageMimeType, onProgress) 
       content: userMessage
     });
   }
+  await prepareHistory();
   return runGeneration(onProgress);
 }
 __name(sendMessage, "sendMessage");
@@ -39746,11 +39801,11 @@ async function continueGeneration(onProgress) {
     return "[Agent] Not configured. Please set API key first via the Settings panel.";
   }
   console.log("[Agent] Continuing generation from where it left off...");
-  await prepareHistory();
   conversationHistory.push({
     role: "user",
     content: "Please continue. Pick up from where you left off and keep working on the task."
   });
+  await prepareHistory();
   return runGeneration(onProgress);
 }
 __name(continueGeneration, "continueGeneration");
@@ -39765,7 +39820,6 @@ function abortGeneration() {
 __name(abortGeneration, "abortGeneration");
 function clearHistory() {
   conversationHistory = [];
-  compressedUpToIndex = 0;
   imageStore.clear();
   historySummary = null;
   console.log("[Agent] Conversation history cleared.");
