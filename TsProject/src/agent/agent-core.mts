@@ -131,10 +131,22 @@ const MAX_STEPS = 25;
 const STEP_LIMIT_PREFIX = '[STEP_LIMIT_REACHED]';
 
 /**
- * Character budget for the summary of trimmed messages.
- * The summary prompt instructs the LLM to stay within this limit.
+ * Character budget for the compaction summary.
+ * Increased to preserve more structured context.
  */
-const SUMMARY_MAX_CHARS = 2000;
+const SUMMARY_MAX_CHARS = 4000;
+
+/**
+ * Minimum token savings required before actually pruning tool outputs.
+ * Avoids pruning when the savings would be negligible.
+ */
+const PRUNE_MINIMUM = 20_000;
+
+/**
+ * Token budget of recent tool outputs to protect from pruning.
+ * Tool results within this budget (counting from the most recent) are kept intact.
+ */
+const PRUNE_PROTECT = 40_000;
 
 // Agent configuration interface
 export interface AgentConfig {
@@ -458,14 +470,169 @@ function estimateTokens(messages: any[]): number {
 }
 
 // ============================================================
-// History summarization
+// Prune old tool outputs (inspired by opencode's prune mechanism)
 // ============================================================
 
 /**
- * Summarize an array of messages into a short paragraph using the LLM.
- * Returns a summary string, or null if summarization fails.
+ * Estimate the token count for a single value by JSON-serializing it.
  */
-async function summarizeMessages(messages: any[]): Promise<string | null> {
+function estimateTokensSingle(value: unknown): number {
+    try {
+        return Math.ceil(JSON.stringify(value).length / CHARS_PER_TOKEN);
+    } catch {
+        return 0;
+    }
+}
+
+/**
+ * Walk backwards through messages and replace old tool-call outputs with
+ * a short placeholder. The most recent tool outputs (within PRUNE_PROTECT
+ * budget) are kept intact. Only outputs older than that are pruned.
+ *
+ * This dramatically reduces token usage before compaction runs, while
+ * preserving recent tool context the model likely still needs.
+ *
+ * @returns The number of tokens reclaimed by pruning.
+ */
+function pruneOldToolOutputs(messages: any[]): number {
+    let total = 0;
+    let pruned = 0;
+    const toPrune: Array<{ msg: any; partIndex: number; estimate: number }> = [];
+
+    // Walk backwards, skip the last 2 messages (current user turn + last assistant)
+    for (let msgIdx = messages.length - 1; msgIdx >= 0; msgIdx--) {
+        const msg = messages[msgIdx] as any;
+
+        // For tool-role messages, each content part may be a tool-result
+        if (msg.role === 'tool' && Array.isArray(msg.content)) {
+            for (let partIdx = msg.content.length - 1; partIdx >= 0; partIdx--) {
+                const part = msg.content[partIdx];
+                if (part?.type === 'tool-result') {
+                    const estimate = estimateTokensSingle(part.output);
+                    total += estimate;
+                    if (total > PRUNE_PROTECT) {
+                        pruned += estimate;
+                        toPrune.push({ msg, partIndex: partIdx, estimate });
+                    }
+                }
+            }
+        }
+
+        // For assistant messages with tool_calls results embedded
+        if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+            for (let partIdx = msg.content.length - 1; partIdx >= 0; partIdx--) {
+                const part = msg.content[partIdx];
+                if (part?.type === 'tool-result') {
+                    const estimate = estimateTokensSingle(part.output);
+                    total += estimate;
+                    if (total > PRUNE_PROTECT) {
+                        pruned += estimate;
+                        toPrune.push({ msg, partIndex: partIdx, estimate });
+                    }
+                }
+            }
+        }
+    }
+
+    if (pruned < PRUNE_MINIMUM) {
+        return 0; // Not enough savings to bother
+    }
+
+    // Actually prune
+    for (const { msg, partIndex } of toPrune) {
+        const part = msg.content[partIndex];
+        const toolName = part.toolName || 'unknown';
+        part.output = { type: 'text' as const, value: `[output pruned — tool: ${toolName}]` };
+    }
+
+    console.log(`[Agent] Pruned ${toPrune.length} old tool output(s), reclaimed ~${pruned} tokens`);
+    return pruned;
+}
+
+// ============================================================
+// Context compaction (structured summarization)
+// ============================================================
+
+/** The structured prompt template for compaction, adapted for Unity dev context. */
+const COMPACTION_PROMPT = `Provide a detailed summary for continuing our conversation.
+Focus on information that would be helpful for continuing the conversation, including what we did, what we're doing, which files/GameObjects we're working on, and what we're going to do next.
+The summary will be used so that another agent can read it and continue the work seamlessly.
+
+When constructing the summary, follow this template:
+---
+## Goal
+
+[What goal(s) is the user trying to accomplish?]
+
+## Instructions
+
+- [What important instructions did the user give that are relevant]
+- [If there is a plan or spec, include information about it]
+
+## Discoveries
+
+[What notable things were learned during this conversation — e.g. scene hierarchy, component states, API behaviors, errors encountered and their fixes]
+
+## Accomplished
+
+[What work has been completed, what work is still in progress, and what work is left?]
+
+## Relevant Context
+
+[List relevant GameObjects, scripts, scenes, assets, tool outputs, or code snippets that pertain to the task. Include specific names and paths.]
+---
+
+Keep the summary under ${SUMMARY_MAX_CHARS} characters. Write in the same language the user used.`;
+
+/**
+ * Build a text representation of messages for the compaction model.
+ * Strips images but preserves tool call names and text content.
+ */
+function buildCompactionInput(messages: any[]): string {
+    let text = '';
+    for (const msg of messages) {
+        const role = (msg as any).role || 'unknown';
+        let msgText = '';
+        const content = (msg as any).content;
+        if (typeof content === 'string') {
+            msgText = content;
+        } else if (Array.isArray(content)) {
+            for (const part of content) {
+                if (typeof part === 'string') {
+                    msgText += part + '\n';
+                } else if (part?.type === 'text' && part.text) {
+                    msgText += part.text + '\n';
+                } else if (part?.type === 'tool-call') {
+                    msgText += `[Tool call: ${part.toolName}(${JSON.stringify(part.args || {}).substring(0, 200)})]\n`;
+                } else if (part?.type === 'tool-result') {
+                    const output = typeof part.output === 'string'
+                        ? part.output
+                        : JSON.stringify(part.output || '');
+                    const truncOutput = output.length > 500 ? output.substring(0, 500) + '...' : output;
+                    msgText += `[Tool result: ${part.toolName} → ${truncOutput}]\n`;
+                }
+            }
+        }
+        // Truncate extremely long individual messages
+        if (msgText.length > 2000) {
+            msgText = msgText.substring(0, 2000) + '... (truncated)';
+        }
+        text += `[${role}]: ${msgText}\n`;
+    }
+
+    // Limit total input to the compaction model
+    if (text.length > 40000) {
+        text = text.substring(0, 40000) + '\n... (further content omitted)';
+    }
+    return text;
+}
+
+/**
+ * Generate a structured compaction summary from an array of messages.
+ * Uses the compaction prompt template inspired by opencode.
+ * Returns the summary string, or null if compaction fails.
+ */
+async function compactMessages(messages: any[]): Promise<string | null> {
     if (!isConfigured || !currentConfig.apiKey) return null;
 
     try {
@@ -477,98 +644,76 @@ async function summarizeMessages(messages: any[]): Promise<string | null> {
         const modelId = currentConfig.summaryModel || currentConfig.model || 'gpt-4o-mini';
         const model = provider.chat(modelId);
 
-        // Build a simplified text representation of the messages to summarize
-        let conversationText = '';
-        for (const msg of messages) {
-            const role = (msg as any).role || 'unknown';
-            let text = '';
-            const content = (msg as any).content;
-            if (typeof content === 'string') {
-                text = content;
-            } else if (Array.isArray(content)) {
-                // Extract text parts only
-                for (const part of content) {
-                    if (typeof part === 'string') {
-                        text += part + '\n';
-                    } else if (part?.type === 'text' && part.text) {
-                        text += part.text + '\n';
-                    } else if (part?.type === 'tool-call') {
-                        text += `[Tool call: ${part.toolName}]\n`;
-                    } else if (part?.type === 'tool-result') {
-                        text += `[Tool result: ${part.toolName}]\n`;
-                    }
-                }
-            }
-            // Truncate extremely long individual messages
-            if (text.length > 1000) {
-                text = text.substring(0, 1000) + '... (truncated)';
-            }
-            conversationText += `[${role}]: ${text}\n`;
-        }
-
-        // Limit total input to the summarizer
-        if (conversationText.length > 20000) {
-            conversationText = conversationText.substring(0, 20000) + '\n... (further content omitted)';
-        }
+        const conversationText = buildCompactionInput(messages);
 
         const result = await generateText({
             model,
-            system: 'You are a concise summarizer. Summarize the following conversation history into a brief paragraph. ' +
-                     'Focus on: what the user wanted to accomplish, what actions were taken (tools called, code executed), ' +
-                     'key results or errors encountered, and the current state. ' +
-                     `Keep the summary under ${SUMMARY_MAX_CHARS} characters. Do NOT include code blocks. ` +
-                     'Write in the same language the user used.',
+            system: COMPACTION_PROMPT,
             prompt: conversationText,
             maxRetries: 1,
         });
 
         const summary = result.text?.trim();
         if (summary && summary.length > 0) {
-            console.log(`[Agent] Generated history summary (${summary.length} chars)`);
+            console.log(`[Agent] Generated compaction summary (${summary.length} chars)`);
             return summary;
         }
     } catch (err: any) {
-        console.error(`[Agent] Failed to generate summary: ${err.message || err}`);
+        console.error(`[Agent] Failed to generate compaction summary: ${err.message || err}`);
     }
     return null;
 }
 
 // ============================================================
-// Sliding window with summarization
+// Sliding window with prune + compaction
 // ============================================================
 
 /**
  * Trim a messages array so that the estimated token count is within budget.
- * Removed messages are optionally summarized.
+ * Uses a two-phase approach inspired by opencode:
  *
- * @param messages    The full messages array
+ * Phase 1 — **Prune**: Walk backwards and replace old tool-call outputs
+ *   with short placeholders, keeping only the most recent tool results intact.
+ *   This alone often frees enough tokens.
+ *
+ * Phase 2 — **Compact**: If still over budget after pruning, remove older
+ *   messages and generate a structured compaction summary via the LLM.
+ *
+ * @param messages    The full messages array (mutated in-place for pruning)
  * @param tokenBudget Maximum tokens allowed
- * @param doSummarize Whether to call the LLM to summarize trimmed messages
- * @returns The trimmed messages array (may include a summary message at the start)
+ * @returns The trimmed messages array (may include a compaction summary at the start)
  */
 async function trimMessagesByTokenBudget(
     messages: any[],
     tokenBudget: number,
-    doSummarize: boolean = true,
 ): Promise<{ messages: any[]; trimmed: boolean }> {
-    const estimated = estimateTokens(messages);
+    let estimated = estimateTokens(messages);
     if (estimated <= tokenBudget) {
         return { messages, trimmed: false };
     }
 
-    console.log(`[Agent] Token estimate ${estimated} exceeds budget ${tokenBudget}, trimming...`);
+    console.log(`[Agent] Token estimate ${estimated} exceeds budget ${tokenBudget}`);
 
-    // Binary-ish search: find the minimum number of messages to keep from the end
-    // such that the estimated tokens are within budget.
-    // Always keep at least MIN_KEEP_MESSAGES.
+    // ---- Phase 1: Prune old tool outputs in-place ----
+    const prunedTokens = pruneOldToolOutputs(messages);
+    if (prunedTokens > 0) {
+        estimated = estimateTokens(messages);
+        console.log(`[Agent] After pruning: ~${estimated} tokens`);
+        if (estimated <= tokenBudget) {
+            return { messages, trimmed: true };
+        }
+    }
+
+    // ---- Phase 2: Compact — remove old messages + structured summary ----
+    console.log(`[Agent] Still over budget after pruning, running compaction...`);
+
+    // Find how many messages to keep from the end
     let keepFromEnd = Math.min(MIN_KEEP_MESSAGES, messages.length);
-    const targetTokens = tokenBudget * 0.8; // trim aggressively to 80% to avoid repeated trims
+    const targetTokens = tokenBudget * 0.75; // trim to 75% to leave room for the summary
 
-    // Start from keeping MIN_KEEP_MESSAGES and increase if still within budget
     while (keepFromEnd < messages.length) {
         const candidate = messages.slice(messages.length - keepFromEnd);
         if (estimateTokens(candidate) > targetTokens) {
-            // Even this many is too much, keep previous amount
             keepFromEnd = Math.max(keepFromEnd - 1, MIN_KEEP_MESSAGES);
             break;
         }
@@ -578,22 +723,21 @@ async function trimMessagesByTokenBudget(
     const keptMessages = messages.slice(messages.length - keepFromEnd);
     const removedMessages = messages.slice(0, messages.length - keepFromEnd);
 
-    console.log(`[Agent] Trimming: removing ${removedMessages.length} messages, keeping ${keptMessages.length}`);
+    console.log(`[Agent] Compaction: removing ${removedMessages.length} messages, keeping ${keptMessages.length}`);
 
-    // Summarize removed messages
+    // Build input for compaction, including any previous summary
     let summaryMsg: any | null = null;
-    if (doSummarize && removedMessages.length > 0) {
-        const previousSummary = historySummary;
-        const toSummarize = previousSummary
-            ? [{ role: 'user', content: `[Previous summary]: ${previousSummary}` }, ...removedMessages]
+    if (removedMessages.length > 0) {
+        const toCompact = historySummary
+            ? [{ role: 'user', content: `[Previous compaction summary]:\n${historySummary}` }, ...removedMessages]
             : removedMessages;
 
-        const summary = await summarizeMessages(toSummarize);
+        const summary = await compactMessages(toCompact);
         if (summary) {
             historySummary = summary;
             summaryMsg = {
                 role: 'user' as const,
-                content: `[Context Summary - the following is a summary of earlier conversation that was trimmed to save context space]:\n${summary}`,
+                content: `[Compacted Context — this is a structured summary of earlier conversation that was compacted to save context space]:\n${summary}`,
             };
         }
     }
@@ -760,28 +904,31 @@ function handlePrepareStep({ messages, stepNumber, steps }: any): any {
     if (ENABLE_SLIDING_WINDOW) {
         const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
         const lastInputTokens = lastStep?.usage?.inputTokens;
-        if (lastInputTokens && lastInputTokens > MAX_INPUT_TOKENS) {
-            console.log(`[Agent] prepareStep(${stepNumber}): last step used ${lastInputTokens} input tokens, exceeds ${MAX_INPUT_TOKENS}, trimming...`);
-            const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
-            const trimmedMsgs = newMessages.slice(newMessages.length - keep);
-            if (historySummary) {
-                trimmedMsgs.unshift({
-                    role: 'user' as const,
-                    content: `[Context Summary - the following is a summary of earlier conversation that was trimmed to save context space]:\n${historySummary}`,
-                } as any);
+        const overBudget = lastInputTokens
+            ? lastInputTokens > MAX_INPUT_TOKENS
+            : estimateTokens(newMessages) > MAX_INPUT_TOKENS;
+
+        if (overBudget) {
+            const source = lastInputTokens ? `actual ${lastInputTokens}` : `estimated ${estimateTokens(newMessages)}`;
+            console.log(`[Agent] prepareStep(${stepNumber}): ${source} tokens exceeds ${MAX_INPUT_TOKENS}`);
+
+            // Phase 1: prune old tool outputs (synchronous, no LLM call)
+            const prunedTokens = pruneOldToolOutputs(newMessages);
+            if (prunedTokens > 0) {
+                console.log(`[Agent] prepareStep(${stepNumber}): pruned ~${prunedTokens} tokens from old tool outputs`);
             }
-            newMessages = trimmedMsgs;
-            console.log(`[Agent] prepareStep(${stepNumber}): trimmed to ${newMessages.length} messages`);
-        } else {
-            const estimatedTokens = estimateTokens(newMessages);
-            if (estimatedTokens > MAX_INPUT_TOKENS) {
-                console.log(`[Agent] prepareStep(${stepNumber}): estimated ${estimatedTokens} tokens, exceeds ${MAX_INPUT_TOKENS}, trimming...`);
+
+            // Re-check after pruning
+            const afterPrune = estimateTokens(newMessages);
+            if (afterPrune > MAX_INPUT_TOKENS) {
+                // Phase 2: emergency trim (synchronous — cannot call async compaction here)
+                console.log(`[Agent] prepareStep(${stepNumber}): still ${afterPrune} tokens after pruning, emergency trim...`);
                 const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
                 const trimmedMsgs = newMessages.slice(newMessages.length - keep);
                 if (historySummary) {
                     trimmedMsgs.unshift({
                         role: 'user' as const,
-                        content: `[Context Summary - the following is a summary of earlier conversation that was trimmed to save context space]:\n${historySummary}`,
+                        content: `[Compacted Context — this is a structured summary of earlier conversation that was compacted to save context space]:\n${historySummary}`,
                     } as any);
                 }
                 newMessages = trimmedMsgs;
@@ -916,7 +1063,7 @@ async function prepareHistory(): Promise<void> {
         const estimated = estimateTokens(conversationHistory);
         if (estimated > MAX_INPUT_TOKENS) {
             const { messages: trimmed, trimmed: didTrim } = await trimMessagesByTokenBudget(
-                conversationHistory, MAX_INPUT_TOKENS, true
+                conversationHistory, MAX_INPUT_TOKENS
             );
             if (didTrim) {
                 conversationHistory = trimmed as ModelMessage[];
