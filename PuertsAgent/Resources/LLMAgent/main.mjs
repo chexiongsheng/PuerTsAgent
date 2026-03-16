@@ -38956,7 +38956,7 @@ __name(captureSceneViewPromise, "captureSceneViewPromise");
 
 // src/tools/eval-tool.mts
 var jsEnv = CS.LLMAgent.ScriptEnvBridge.CreateJavaScriptEnv();
-var builtinDescriptions = (() => {
+var builtinSummaries = (() => {
   const csArray = CS.LLMAgent.ScriptEnvBridge.LoadBuiltinModules(jsEnv);
   const result = [];
   for (let i2 = 0; i2 < csArray.Length; i2++) {
@@ -38964,7 +38964,7 @@ var builtinDescriptions = (() => {
   }
   return result;
 })();
-var builtinDescriptionsText = builtinDescriptions.length > 0 ? "\n\n### Built-in Helper Functions\n\nThe following utility functions are pre-loaded in the evalJsCode VM and can be called directly inside your `execute()` function:\n\n" + builtinDescriptions.join("\n\n") : "";
+var builtinSummariesText = builtinSummaries.length > 0 ? "\n\n### Built-in Helper Modules\n\nThe following helper modules are available in the evalJsCode VM. Use ESM dynamic `import()` to access their functions (e.g. `const sv = await import('LLMAgent/builtin/scene-view.mjs'); sv.focusSceneViewOn('Main Camera');`). Each module also exports a `description` string with detailed usage \u2014 import it and read `module.description` when you need specifics.\n\n" + builtinSummaries.join("\n\n") : "";
 var RUNNER_CODE = `(function(onFinish) {
     execute().then(function(result) {
         var resultStr;
@@ -38988,7 +38988,7 @@ function createEvalTools() {
      * Evaluate JavaScript code in the PuerTS runtime environment.
      */
     evalJsCode: tool({
-      description: 'Execute JavaScript code in a dedicated PuerTS runtime environment. This VM is separate from the main agent VM but is **reused across calls** \u2014 variables, functions, and state defined in previous calls persist and can be referenced in later calls.\n\nThe code runs inside Unity via PuerTS with full access to the `CS` and `puer` globals (see PuerTS interop rules and runtime environment notes in the system prompt).\n\nUse this tool when you need to inspect or modify Unity scene objects, create/destroy GameObjects or Components, query hierarchies, execute Unity API calls dynamically, or test code snippets in the live environment.\n\n**Code format**: Your code MUST be an async function declaration named `execute`, for example:\n```\nasync function execute() {\n    // your logic here\n    return someValue;\n}\n```\nUse `return <value>` inside the function to pass a result back \u2014 the returned value will appear in the `result` field of the response. If no `return` statement is used, `result` will be "(no return value)". Objects are serialized via JSON.stringify; primitives are converted to strings.\n\nOn success the response is `{ success: true, result: string }`. On failure the response is `{ success: false, error: string, stack: string }`.\n\nUse console.log() for debug output (it goes to the Unity console).' + builtinDescriptionsText,
+      description: 'Execute JavaScript code in a dedicated PuerTS runtime environment. This VM is separate from the main agent VM but is **reused across calls** \u2014 variables, functions, and state defined in previous calls persist and can be referenced in later calls.\n\nThe code runs inside Unity via PuerTS with full access to the `CS` and `puer` globals (see PuerTS interop rules and runtime environment notes in the system prompt).\n\nUse this tool when you need to inspect or modify Unity scene objects, create/destroy GameObjects or Components, query hierarchies, execute Unity API calls dynamically, or test code snippets in the live environment.\n\n**Code format**: Your code MUST be an async function declaration named `execute`, for example:\n```\nasync function execute() {\n    // your logic here\n    return someValue;\n}\n```\nUse `return <value>` inside the function to pass a result back \u2014 the returned value will appear in the `result` field of the response. If no `return` statement is used, `result` will be "(no return value)". Objects are serialized via JSON.stringify; primitives are converted to strings.\n\nOn success the response is `{ success: true, result: string }`. On failure the response is `{ success: false, error: string, stack: string }`.\n\nUse console.log() for debug output (it goes to the Unity console).' + builtinSummariesText,
       inputSchema: external_exports.object({
         code: external_exports.string().describe(
           "An async function declaration named `execute`. Example: \"async function execute() {\\n  const go = CS.UnityEngine.GameObject.Find('Main Camera');\\n  return go.transform.position.toString();\\n}\""

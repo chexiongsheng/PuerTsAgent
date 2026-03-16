@@ -28,7 +28,9 @@ namespace LLMAgent
 
         /// <summary>
         /// Load all builtin JS modules in the given ScriptEnv via ExecuteModule,
-        /// extract the exported "description" from each module, and return them.
+        /// extract the exported "summary" from each module, and return them.
+        /// The summaries are short descriptions shown in the tool context;
+        /// full descriptions are available via dynamic import at runtime.
         /// The modules are loaded from Resources/LLMAgent/builtin/ folder.
         /// </summary>
         [UnityEngine.Scripting.Preserve]
@@ -38,7 +40,7 @@ namespace LLMAgent
             if (assets == null || assets.Length == 0)
                 return new string[0];
 
-            var descriptions = new List<string>();
+            var summaries = new List<string>();
             foreach (var asset in assets)
             {
                 var moduleName = asset.name; // e.g. "unity-log"
@@ -46,10 +48,10 @@ namespace LLMAgent
                 try
                 {
                     var moduleExports = env.ExecuteModule(specifier);
-                    var desc = moduleExports.Get<string>("description");
-                    if (!string.IsNullOrEmpty(desc))
+                    var summary = moduleExports.Get<string>("summary");
+                    if (!string.IsNullOrEmpty(summary))
                     {
-                        descriptions.Add(desc);
+                        summaries.Add(summary);
                     }
                     Debug.Log($"[ScriptEnvBridge] Loaded builtin module '{specifier}'.");
                 }
@@ -58,7 +60,7 @@ namespace LLMAgent
                     Debug.LogWarning($"[ScriptEnvBridge] Failed to load builtin module '{specifier}': {e.Message}");
                 }
             }
-            return descriptions.ToArray();
+            return summaries.ToArray();
         }
     }
 }

@@ -2,6 +2,9 @@ var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
 // src/builtin/type-reflection.mts
+var summary = `**type-reflection** \u2014 C# type introspection via reflection.
+Functions: \`listNamespaces\`, \`listTypesInNamespace\`, \`getTypeDetails\`.
+Use \`await import('LLMAgent/builtin/type-reflection.mjs')\` to access; read \`.description\` for detailed usage.`;
 var description = `
 - **\`listNamespaces()\`** \u2014 List all C# namespaces available across all loaded assemblies.
   - Returns a parsed JSON object with a \`namespaces\` array of namespace name strings.
@@ -31,9 +34,10 @@ function getTypeDetails(typeNames) {
   return JSON.parse(json);
 }
 __name(getTypeDetails, "getTypeDetails");
-globalThis.listNamespaces = listNamespaces;
-globalThis.listTypesInNamespace = listTypesInNamespace;
-globalThis.getTypeDetails = getTypeDetails;
 export {
-  description
+  description,
+  getTypeDetails,
+  listNamespaces,
+  listTypesInNamespace,
+  summary
 };
