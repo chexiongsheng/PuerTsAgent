@@ -6,7 +6,7 @@ import { generateText, stepCountIs, type ModelMessage } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { tool } from 'ai';
 import { z } from 'zod';
-import { createUnityLogTools } from '../tools/unity-log-tool.mjs';
+
 import { createScreenshotTools } from '../tools/screenshot-tool.mjs';
 import { createSceneViewNavigationTools } from '../tools/scene-view-tool.mjs';
 import { createTypeReflectionTools } from '../tools/type-reflection-tool.mjs';
@@ -677,7 +677,6 @@ function buildSystemPrompt(): string {
  */
 function createToolSet() {
     return {
-        ...createUnityLogTools(),
         ...createScreenshotTools(),
         ...createSceneViewNavigationTools(),
         ...createTypeReflectionTools(),

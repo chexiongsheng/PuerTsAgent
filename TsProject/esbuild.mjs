@@ -188,3 +188,51 @@ if (patchCount > 0) {
     console.log(`[esbuild] Applied ${patchCount} post-build patch(es).`);
 }
 console.log('[esbuild] Bundle built successfully → ../PuertsAgent/Resources/LLMAgent/main.mjs');
+
+// ==========================================================================
+// Phase 2: Build builtin helper functions (separate from main bundle)
+// ==========================================================================
+import { readdirSync, mkdirSync, existsSync } from 'fs';
+import { join } from 'path';
+
+const builtinSrcDir = 'src/builtin';
+const builtinOutDir = '../PuertsAgent/Resources/LLMAgent/builtin';
+
+// Find all .mts files in src/builtin/ (excluding .d.ts)
+const builtinFiles = existsSync(builtinSrcDir)
+    ? readdirSync(builtinSrcDir).filter(f =>
+        f.endsWith('.mts') && !f.endsWith('.d.mts'))
+    : [];
+
+if (builtinFiles.length > 0) {
+    // Ensure output directory exists
+    if (!existsSync(builtinOutDir)) {
+        mkdirSync(builtinOutDir, { recursive: true });
+    }
+
+    const builtinEntries = builtinFiles.map(f => join(builtinSrcDir, f));
+
+    // Build each builtin module as ESM so it can be loaded via ScriptEnv.ExecuteModule().
+    // ExecuteModule returns a ScriptObject whose exports (e.g. "description") can be read
+    // from C#. Module top-level side effects (like globalThis assignments) also run.
+    await build({
+        entryPoints: builtinEntries,
+        bundle: true,
+        format: 'esm',
+        outdir: builtinOutDir,
+        outExtension: { '.js': '.mjs' },
+        platform: 'neutral',
+        target: 'esnext',
+        sourcemap: false,
+        minify: false,
+        keepNames: true,
+        external: [],
+        define: {
+            'process.env.NODE_ENV': '"production"',
+        },
+    });
+
+    console.log(`[esbuild:builtin] Built ${builtinFiles.length} builtin module(s) → ${builtinOutDir}/`);
+} else {
+    console.log('[esbuild:builtin] No builtin modules found in src/builtin/');
+}

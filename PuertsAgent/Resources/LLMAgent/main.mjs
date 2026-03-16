@@ -38801,73 +38801,6 @@ function createOpenAI(options = {}) {
 __name(createOpenAI, "createOpenAI");
 var openai = createOpenAI();
 
-// src/tools/unity-log-tool.mts
-function createUnityLogTools() {
-  return {
-    /**
-     * Get recent Unity console logs with optional filtering.
-     */
-    getUnityLogs: tool({
-      description: "Get recent Unity console logs. Use this tool to inspect Unity Editor/Runtime logs, including errors, warnings, and normal log messages. Useful for debugging issues, checking for errors, or monitoring application state.",
-      inputSchema: external_exports.object({
-        count: external_exports.number().int().min(1).max(50).default(20).describe("Number of recent log entries to retrieve (1-50, default 20)"),
-        logType: external_exports.enum(["all", "error", "warning", "log"]).default("all").describe(
-          'Filter by log type: "all" for all logs, "error" for errors and exceptions, "warning" for warnings, "log" for normal messages'
-        )
-      }),
-      execute: /* @__PURE__ */ __name(async ({ count, logType }) => {
-        try {
-          const logsJson = CS.LLMAgent.UnityLogBridge.GetRecentLogs(count, logType);
-          const logs = JSON.parse(logsJson);
-          if (logs.length === 0) {
-            return {
-              success: true,
-              message: `No ${logType === "all" ? "" : logType + " "}logs found.`,
-              logs: []
-            };
-          }
-          return {
-            success: true,
-            message: `Found ${logs.length} log entries.`,
-            logs
-          };
-        } catch (error48) {
-          return {
-            success: false,
-            message: `Failed to retrieve logs: ${error48.message || error48}`,
-            logs: []
-          };
-        }
-      }, "execute")
-    }),
-    /**
-     * Get a summary of Unity log counts by type.
-     */
-    getUnityLogSummary: tool({
-      description: "Get a summary count of Unity console logs by type (errors, warnings, normal logs). Use this to quickly check if there are any errors or warnings without retrieving full log details.",
-      inputSchema: external_exports.object({}),
-      execute: /* @__PURE__ */ __name(async () => {
-        try {
-          const summaryJson = CS.LLMAgent.UnityLogBridge.GetLogSummary();
-          const summary = JSON.parse(summaryJson);
-          return {
-            success: true,
-            summary,
-            message: `Log summary: ${summary.error} errors, ${summary.warning} warnings, ${summary.log} info messages (${summary.total} total)`
-          };
-        } catch (error48) {
-          return {
-            success: false,
-            summary: null,
-            message: `Failed to retrieve log summary: ${error48.message || error48}`
-          };
-        }
-      }, "execute")
-    })
-  };
-}
-__name(createUnityLogTools, "createUnityLogTools");
-
 // src/tools/screenshot-tool.mts
 function createScreenshotTools() {
   return {
@@ -39193,7 +39126,16 @@ function createTypeReflectionTools() {
 __name(createTypeReflectionTools, "createTypeReflectionTools");
 
 // src/tools/eval-tool.mts
-var jsEnv = null;
+var jsEnv = CS.LLMAgent.ScriptEnvBridge.CreateJavaScriptEnv();
+var builtinDescriptions = (() => {
+  const csArray = CS.LLMAgent.ScriptEnvBridge.LoadBuiltinModules(jsEnv);
+  const result = [];
+  for (let i2 = 0; i2 < csArray.Length; i2++) {
+    result.push(csArray.get_Item(i2));
+  }
+  return result;
+})();
+var builtinDescriptionsText = builtinDescriptions.length > 0 ? "\n\n### Built-in Helper Functions\n\nThe following utility functions are pre-loaded in the evalJsCode VM and can be called directly inside your `execute()` function:\n\n" + builtinDescriptions.join("\n\n") : "";
 var RUNNER_CODE = `(function(onFinish) {
     execute().then(function(result) {
         var resultStr;
@@ -39217,7 +39159,7 @@ function createEvalTools() {
      * Evaluate JavaScript code in the PuerTS runtime environment.
      */
     evalJsCode: tool({
-      description: 'Execute JavaScript code in a dedicated PuerTS runtime environment. This VM is separate from the main agent VM but is **reused across calls** \u2014 variables, functions, and state defined in previous calls persist and can be referenced in later calls.\n\nThe code runs inside Unity via PuerTS with full access to the `CS` and `puer` globals (see PuerTS interop rules and runtime environment notes in the system prompt).\n\nUse this tool when you need to inspect or modify Unity scene objects, create/destroy GameObjects or Components, query hierarchies, execute Unity API calls dynamically, or test code snippets in the live environment.\n\n**Code format**: Your code MUST be an async function declaration named `execute`, for example:\n```\nasync function execute() {\n    // your logic here\n    return someValue;\n}\n```\nUse `return <value>` inside the function to pass a result back \u2014 the returned value will appear in the `result` field of the response. If no `return` statement is used, `result` will be "(no return value)". Objects are serialized via JSON.stringify; primitives are converted to strings.\n\nOn success the response is `{ success: true, result: string }`. On failure the response is `{ success: false, error: string, stack: string }`.\n\nUse console.log() for debug output (it goes to the Unity console).',
+      description: 'Execute JavaScript code in a dedicated PuerTS runtime environment. This VM is separate from the main agent VM but is **reused across calls** \u2014 variables, functions, and state defined in previous calls persist and can be referenced in later calls.\n\nThe code runs inside Unity via PuerTS with full access to the `CS` and `puer` globals (see PuerTS interop rules and runtime environment notes in the system prompt).\n\nUse this tool when you need to inspect or modify Unity scene objects, create/destroy GameObjects or Components, query hierarchies, execute Unity API calls dynamically, or test code snippets in the live environment.\n\n**Code format**: Your code MUST be an async function declaration named `execute`, for example:\n```\nasync function execute() {\n    // your logic here\n    return someValue;\n}\n```\nUse `return <value>` inside the function to pass a result back \u2014 the returned value will appear in the `result` field of the response. If no `return` statement is used, `result` will be "(no return value)". Objects are serialized via JSON.stringify; primitives are converted to strings.\n\nOn success the response is `{ success: true, result: string }`. On failure the response is `{ success: false, error: string, stack: string }`.\n\nUse console.log() for debug output (it goes to the Unity console).' + builtinDescriptionsText,
       inputSchema: external_exports.object({
         code: external_exports.string().describe(
           "An async function declaration named `execute`. Example: \"async function execute() {\\n  const go = CS.UnityEngine.GameObject.Find('Main Camera');\\n  return go.transform.position.toString();\\n}\""
@@ -39225,9 +39167,6 @@ function createEvalTools() {
       }),
       execute: /* @__PURE__ */ __name(async ({ code }) => {
         try {
-          if (!jsEnv) {
-            jsEnv = CS.LLMAgent.ScriptEnvBridge.CreateJavaScriptEnv();
-          }
           console.log(`[EvalJsTool] Executing code:
 ${code}`);
           try {
@@ -39697,7 +39636,6 @@ function buildSystemPrompt() {
 __name(buildSystemPrompt, "buildSystemPrompt");
 function createToolSet() {
   return {
-    ...createUnityLogTools(),
     ...createScreenshotTools(),
     ...createSceneViewNavigationTools(),
     ...createTypeReflectionTools(),

@@ -7,7 +7,27 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 
-var jsEnv: CS.Puerts.ScriptEnv = null as never;
+// The eval VM (jsEnv) is created once at module load time so that:
+// 1. Builtin modules are loaded via ExecuteModule (which registers global helper functions).
+// 2. The descriptions extracted from builtin modules can be included in the tool description.
+const jsEnv: CS.Puerts.ScriptEnv = CS.LLMAgent.ScriptEnvBridge.CreateJavaScriptEnv();
+
+// Load all builtin modules into the eval VM and collect their descriptions.
+const builtinDescriptions: string[] = (() => {
+    const csArray = CS.LLMAgent.ScriptEnvBridge.LoadBuiltinModules(jsEnv);
+    const result: string[] = [];
+    for (let i = 0; i < csArray.Length; i++) {
+        result.push(csArray.get_Item(i));
+    }
+    return result;
+})();
+
+/** Builtin helper function descriptions, joined for inclusion in the tool description. */
+export const builtinDescriptionsText: string = builtinDescriptions.length > 0
+    ? '\n\n### Built-in Helper Functions\n\n' +
+      'The following utility functions are pre-loaded in the evalJsCode VM and can be called directly inside your `execute()` function:\n\n' +
+      builtinDescriptions.join('\n\n')
+    : '';
 
 // Fixed runner code that calls the globally defined execute() function,
 // handles async result serialization and error reporting via onFinish callback.
@@ -54,7 +74,8 @@ export function createEvalTools() {
                 'Objects are serialized via JSON.stringify; primitives are converted to strings.\n\n' +
                 'On success the response is `{ success: true, result: string }`. ' +
                 'On failure the response is `{ success: false, error: string, stack: string }`.\n\n' +
-                'Use console.log() for debug output (it goes to the Unity console).',
+                'Use console.log() for debug output (it goes to the Unity console).' +
+                builtinDescriptionsText,
             inputSchema: z.object({
                 code: z
                     .string()
@@ -65,9 +86,6 @@ export function createEvalTools() {
             }),
             execute: async ({ code }) => {
                 try {
-                    if (!jsEnv) {
-                        jsEnv = CS.LLMAgent.ScriptEnvBridge.CreateJavaScriptEnv();
-                    }
                     console.log(`[EvalJsTool] Executing code:\n${code}`);
 
                     // Step 1: Define the execute() function via EvalSync.

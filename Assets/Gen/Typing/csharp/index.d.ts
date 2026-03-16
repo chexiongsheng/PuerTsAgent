@@ -296,6 +296,7 @@
         class Array extends System.Object implements System.Collections.IStructuralComparable, System.Collections.IStructuralEquatable, System.ICloneable, System.Collections.ICollection, System.Collections.IEnumerable, System.Collections.IList
         {
             protected [__keep_incompatibility]: never;
+            public get Length(): number;
         }
         class Enum extends System.ValueType implements System.IFormattable, System.IComparable, System.IConvertible
         {
@@ -361,6 +362,7 @@
             public static CreateJavaScriptEnv () : Puerts.ScriptEnv
             public static Eval ($env: Puerts.ScriptEnv, $script: string, $onFinish: System.Action$1<string>) : void
             public static EvalSync ($env: Puerts.ScriptEnv, $script: string) : void
+            public static LoadBuiltinModules ($env: Puerts.ScriptEnv) : System.Array$1<string>
             public constructor ()
         }
     }
@@ -410,6 +412,8 @@
         class ScriptEnv extends System.Object implements System.IDisposable
         {
             protected [__keep_incompatibility]: never;
+            public ExecuteModule ($specifier: string) : Puerts.ScriptObject
+            public Eval ($chunk: string, $chunkName?: string) : void
         }
     }
     namespace System.Reflection {
