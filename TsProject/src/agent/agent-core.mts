@@ -8,8 +8,6 @@ import { tool } from 'ai';
 import { z } from 'zod';
 
 import { createScreenshotTools } from '../tools/screenshot-tool.mjs';
-import { createSceneViewNavigationTools } from '../tools/scene-view-tool.mjs';
-import { createTypeReflectionTools } from '../tools/type-reflection-tool.mjs';
 import { createEvalTools } from '../tools/eval-tool.mjs';
 
 // ============================================================
@@ -678,8 +676,6 @@ function buildSystemPrompt(): string {
 function createToolSet() {
     return {
         ...createScreenshotTools(),
-        ...createSceneViewNavigationTools(),
-        ...createTypeReflectionTools(),
         ...createEvalTools(),
         ...createRetrieveImageTool(),
     };
