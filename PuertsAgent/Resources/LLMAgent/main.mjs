@@ -39037,63 +39037,7 @@ ${code}`);
 }
 __name(createEvalTools, "createEvalTools");
 
-// src/agent/agent-core.mts
-function randomSuffix(len = 5) {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let result = "";
-  for (let i2 = 0; i2 < len; i2++) {
-    result += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return result;
-}
-__name(randomSuffix, "randomSuffix");
-var ImageStore = class {
-  static {
-    __name(this, "ImageStore");
-  }
-  entries = [];
-  /** Unique prefix for image placeholders, e.g. "image_a3f9x". */
-  imagePrefix;
-  constructor() {
-    const suffix = randomSuffix(5);
-    this.imagePrefix = `image_${suffix}`;
-  }
-  /** Store an image string and return its index. */
-  store(content) {
-    const index = this.entries.length;
-    this.entries.push({ content, length: content.length });
-    return index;
-  }
-  /** Build a placeholder string for a stored entry. */
-  placeholder(index, length) {
-    return `${this.imagePrefix}(${index}, ${length})`;
-  }
-  /** Retrieve a stored image string by index. Returns null if not found. */
-  retrieve(index) {
-    if (index < 0 || index >= this.entries.length) return null;
-    return this.entries[index].content;
-  }
-  /** Clear all stored entries and regenerate prefix. */
-  clear() {
-    this.entries = [];
-    const suffix = randomSuffix(5);
-    this.imagePrefix = `image_${suffix}`;
-  }
-  get size() {
-    return this.entries.length;
-  }
-};
-var imageStore = new ImageStore();
-var currentAbortController = null;
-var ENABLE_SLIDING_WINDOW = true;
-var CHARS_PER_TOKEN = 4;
-var MAX_INPUT_TOKENS = 6e5;
-var MIN_KEEP_MESSAGES = 6;
-var MAX_STEPS = 25;
-var STEP_LIMIT_PREFIX = "[STEP_LIMIT_REACHED]";
-var SUMMARY_MAX_CHARS = 4e3;
-var PRUNE_MINIMUM = 2e4;
-var PRUNE_PROTECT = 4e4;
+// src/agent/prompt.mts
 var SYSTEM_PROMPT = `You are a helpful AI assistant running inside Unity via PuerTS (a TypeScript/JavaScript runtime for Unity). You can help with game development, scripting, and general questions. Be concise and practical.
 
 ## Context Compression \u2014 Image Placeholders
@@ -39212,6 +39156,68 @@ The evalJsCode tool runs in a **pure V8 engine** \u2014 there is NO \`window\`, 
 
 Before using runtime-only APIs (e.g. \`Destroy\`, \`MeshFilter.mesh\`, coroutines), first check \`CS.UnityEngine.Application.isPlaying\` via \`evalJsCode\` and use edit-mode-safe alternatives when needed (e.g. \`DestroyImmediate\`, \`sharedMesh\`).
 `;
+function buildSystemPrompt(imagePrefix) {
+  return SYSTEM_PROMPT.replace(/\{IMAGE_PREFIX\}/g, imagePrefix);
+}
+__name(buildSystemPrompt, "buildSystemPrompt");
+
+// src/agent/agent-core.mts
+function randomSuffix(len = 5) {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  for (let i2 = 0; i2 < len; i2++) {
+    result += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return result;
+}
+__name(randomSuffix, "randomSuffix");
+var ImageStore = class {
+  static {
+    __name(this, "ImageStore");
+  }
+  entries = [];
+  /** Unique prefix for image placeholders, e.g. "image_a3f9x". */
+  imagePrefix;
+  constructor() {
+    const suffix = randomSuffix(5);
+    this.imagePrefix = `image_${suffix}`;
+  }
+  /** Store an image string and return its index. */
+  store(content) {
+    const index = this.entries.length;
+    this.entries.push({ content, length: content.length });
+    return index;
+  }
+  /** Build a placeholder string for a stored entry. */
+  placeholder(index, length) {
+    return `${this.imagePrefix}(${index}, ${length})`;
+  }
+  /** Retrieve a stored image string by index. Returns null if not found. */
+  retrieve(index) {
+    if (index < 0 || index >= this.entries.length) return null;
+    return this.entries[index].content;
+  }
+  /** Clear all stored entries and regenerate prefix. */
+  clear() {
+    this.entries = [];
+    const suffix = randomSuffix(5);
+    this.imagePrefix = `image_${suffix}`;
+  }
+  get size() {
+    return this.entries.length;
+  }
+};
+var imageStore = new ImageStore();
+var currentAbortController = null;
+var ENABLE_SLIDING_WINDOW = true;
+var CHARS_PER_TOKEN = 4;
+var MAX_INPUT_TOKENS = 6e5;
+var MIN_KEEP_MESSAGES = 6;
+var MAX_STEPS = 25;
+var STEP_LIMIT_PREFIX = "[STEP_LIMIT_REACHED]";
+var SUMMARY_MAX_CHARS = 4e3;
+var PRUNE_MINIMUM = 2e4;
+var PRUNE_PROTECT = 4e4;
 var DEFAULT_CONFIG = {
   apiKey: "",
   model: "gpt-4o-mini"
@@ -39481,10 +39487,6 @@ function configure(config2) {
   return `[Agent] Configured successfully. Model: ${currentConfig.model}`;
 }
 __name(configure, "configure");
-function buildSystemPrompt() {
-  return SYSTEM_PROMPT.replace(/\{IMAGE_PREFIX\}/g, imageStore.imagePrefix);
-}
-__name(buildSystemPrompt, "buildSystemPrompt");
 function createToolSet() {
   return {
     ...createScreenshotTools(),
@@ -39678,7 +39680,7 @@ async function runGeneration(onProgress) {
     const tools = createToolSet();
     const result = await generateText({
       model,
-      system: buildSystemPrompt(),
+      system: buildSystemPrompt(imageStore.imagePrefix),
       messages: conversationHistory,
       tools,
       abortSignal,
