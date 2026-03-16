@@ -4,6 +4,7 @@ using System.IO;
 using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
+using UnityEditor.SceneManagement;
 #endif
 
 namespace LLMAgent
@@ -228,10 +229,11 @@ namespace LLMAgent
             float size = sceneView.size;
             bool ortho = sceneView.orthographic;
 
-            return $"{{\"success\":true,\"pivot\":{{\"x\":{pivot.x:F3},\"y\":{pivot.y:F3},\"z\":{pivot.z:F3}}}," +
-                   $"\"rotation\":{{\"x\":{rotation.x:F4},\"y\":{rotation.y:F4},\"z\":{rotation.z:F4},\"w\":{rotation.w:F4}}}," +
-                   $"\"eulerAngles\":{{\"x\":{euler.x:F1},\"y\":{euler.y:F1},\"z\":{euler.z:F1}}}," +
-                   $"\"size\":{size:F3},\"orthographic\":{(ortho ? "true" : "false")}}}";
+            var ic = System.Globalization.CultureInfo.InvariantCulture;
+            return "{\"success\":true,\"pivot\":{\"x\":" + pivot.x.ToString("F3", ic) + ",\"y\":" + pivot.y.ToString("F3", ic) + ",\"z\":" + pivot.z.ToString("F3", ic) + "}," +
+                   "\"rotation\":{\"x\":" + rotation.x.ToString("F4", ic) + ",\"y\":" + rotation.y.ToString("F4", ic) + ",\"z\":" + rotation.z.ToString("F4", ic) + ",\"w\":" + rotation.w.ToString("F4", ic) + "}," +
+                   "\"eulerAngles\":{\"x\":" + euler.x.ToString("F1", ic) + ",\"y\":" + euler.y.ToString("F1", ic) + ",\"z\":" + euler.z.ToString("F1", ic) + "}," +
+                   "\"size\":" + size.ToString("F3", ic) + ",\"orthographic\":" + (ortho ? "true" : "false") + "}";
 #else
             return BuildErrorJson("Scene view state is only available in the Unity Editor.");
 #endif
@@ -481,6 +483,224 @@ namespace LLMAgent
             Debug.Log($"[ScreenCaptureBridge] Scene view orbit {direction}: rotation {oldEuler} -> {newEuler}");
             return BuildManipulationSuccessJson("orbit", direction, amount,
                 $"Orbited {direction} by {angleDeg:F1}°. Rotation: ({oldEuler.x:F1}, {oldEuler.y:F1}, {oldEuler.z:F1}) -> ({newEuler.x:F1}, {newEuler.y:F1}, {newEuler.z:F1})");
+        }
+
+        /// <summary>
+        /// Get the hierarchy of a GameObject as a tree structure.
+        /// </summary>
+        /// <param name="name">Name of the root GameObject (empty or null = all root objects)</param>
+        /// <param name="depth">Maximum depth to traverse (0 = unlimited)</param>
+        /// <returns>JSON string with hierarchy tree</returns>
+        public static string GetGameObjectHierarchy(string name, int depth)
+        {
+            try
+            {
+                var sb = new System.Text.StringBuilder();
+                sb.Append("{\"success\":true,\"hierarchy\":[");
+
+                GameObject[] roots;
+                if (!string.IsNullOrEmpty(name))
+                {
+                    var go = GameObject.Find(name);
+                    if (go == null)
+                        return BuildErrorJson($"GameObject '{name}' not found.");
+                    roots = new[] { go };
+                }
+                else
+                {
+                    // Get all root GameObjects in the active scene
+                    var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+                    roots = scene.GetRootGameObjects();
+                }
+
+                for (int i = 0; i < roots.Length; i++)
+                {
+                    if (i > 0) sb.Append(",");
+                    AppendGameObjectNode(sb, roots[i], depth, 1);
+                }
+
+                sb.Append("]}");
+                return sb.ToString();
+            }
+            catch (Exception e)
+            {
+                return BuildErrorJson(e.Message);
+            }
+        }
+
+        private static void AppendGameObjectNode(System.Text.StringBuilder sb, GameObject go, int maxDepth, int currentDepth)
+        {
+            sb.Append("{\"name\":\"");
+            sb.Append(EscapeJson(go.name));
+            sb.Append("\",\"active\":");
+            sb.Append(go.activeSelf ? "true" : "false");
+
+            // List component types
+            var components = go.GetComponents<Component>();
+            sb.Append(",\"components\":[");
+            bool firstComp = true;
+            foreach (var comp in components)
+            {
+                if (comp == null) continue; // missing script
+                if (!firstComp) sb.Append(",");
+                sb.Append("\"");
+                sb.Append(EscapeJson(comp.GetType().Name));
+                sb.Append("\"");
+                firstComp = false;
+            }
+            sb.Append("]");
+
+            // Children
+            if (maxDepth == 0 || currentDepth < maxDepth)
+            {
+                int childCount = go.transform.childCount;
+                if (childCount > 0)
+                {
+                    sb.Append(",\"children\":[");
+                    for (int i = 0; i < childCount; i++)
+                    {
+                        if (i > 0) sb.Append(",");
+                        AppendGameObjectNode(sb, go.transform.GetChild(i).gameObject, maxDepth, currentDepth + 1);
+                    }
+                    sb.Append("]");
+                }
+            }
+            else if (go.transform.childCount > 0)
+            {
+                sb.Append(",\"childCount\":");
+                sb.Append(go.transform.childCount);
+            }
+
+            sb.Append("}");
+        }
+
+        /// <summary>
+        /// Select a GameObject in the Unity Editor's hierarchy/scene view.
+        /// </summary>
+        /// <param name="name">Name of the GameObject to select (uses GameObject.Find)</param>
+        /// <returns>JSON result string</returns>
+        public static string SelectGameObject(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return BuildErrorJson("GameObject name cannot be empty.");
+
+            var go = GameObject.Find(name);
+            if (go == null)
+                return BuildErrorJson($"GameObject '{name}' not found.");
+
+            Selection.activeGameObject = go;
+            EditorGUIUtility.PingObject(go);
+            Debug.Log($"[ScreenCaptureBridge] Selected GameObject: {go.name}");
+            return $"{{\"success\":true,\"selected\":\"{EscapeJson(go.name)}\"}}";
+        }
+
+        /// <summary>
+        /// Directly set the Scene view camera position, rotation, and zoom level.
+        /// </summary>
+        /// <param name="px">Pivot X</param>
+        /// <param name="py">Pivot Y</param>
+        /// <param name="pz">Pivot Z</param>
+        /// <param name="setPivot">Whether to apply the pivot value</param>
+        /// <param name="rx">Rotation euler X (degrees)</param>
+        /// <param name="ry">Rotation euler Y (degrees)</param>
+        /// <param name="rz">Rotation euler Z (degrees)</param>
+        /// <param name="setRotation">Whether to apply the rotation value</param>
+        /// <param name="size">Zoom size (positive float, 0 = keep current)</param>
+        /// <returns>JSON result string</returns>
+        public static string SetSceneViewCamera(float px, float py, float pz, bool setPivot, float rx, float ry, float rz, bool setRotation, float size)
+        {
+            SceneView sceneView = SceneView.lastActiveSceneView;
+            if (sceneView == null)
+                return BuildErrorJson("No active Scene view found.");
+
+            try
+            {
+                if (setPivot)
+                {
+                    sceneView.pivot = new Vector3(px, py, pz);
+                }
+
+                if (setRotation)
+                {
+                    sceneView.rotation = Quaternion.Euler(rx, ry, rz);
+                }
+
+                if (size > 0f)
+                {
+                    sceneView.size = size;
+                }
+
+                sceneView.Repaint();
+
+                var p = sceneView.pivot;
+                var e = sceneView.rotation.eulerAngles;
+                Debug.Log($"[ScreenCaptureBridge] SetSceneViewCamera: pivot=({p.x:F2},{p.y:F2},{p.z:F2}), euler=({e.x:F1},{e.y:F1},{e.z:F1}), size={sceneView.size:F2}");
+                var ic = System.Globalization.CultureInfo.InvariantCulture;
+                return "{\"success\":true,\"pivot\":{\"x\":" + p.x.ToString("F3", ic) + ",\"y\":" + p.y.ToString("F3", ic) + ",\"z\":" + p.z.ToString("F3", ic) + "}," +
+                       "\"eulerAngles\":{\"x\":" + e.x.ToString("F1", ic) + ",\"y\":" + e.y.ToString("F1", ic) + ",\"z\":" + e.z.ToString("F1", ic) + "}," +
+                       "\"size\":" + sceneView.size.ToString("F3", ic) + "}";
+            }
+            catch (Exception ex)
+            {
+                return BuildErrorJson($"SetSceneViewCamera failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Focus the Scene view on a specific GameObject (like pressing F in the Editor).
+        /// </summary>
+        /// <param name="gameObjectName">Name of the GameObject to focus on</param>
+        /// <returns>JSON result string</returns>
+        public static string FocusSceneViewOn(string gameObjectName)
+        {
+            if (string.IsNullOrEmpty(gameObjectName))
+                return BuildErrorJson("GameObject name cannot be empty.");
+
+            var go = GameObject.Find(gameObjectName);
+            if (go == null)
+                return BuildErrorJson($"GameObject '{gameObjectName}' not found.");
+
+            SceneView sceneView = SceneView.lastActiveSceneView;
+            if (sceneView == null)
+                return BuildErrorJson("No active Scene view found.");
+
+            // Select the object and frame it in the scene view
+            Selection.activeGameObject = go;
+            sceneView.FrameSelected();
+
+            var p = sceneView.pivot;
+            var s = sceneView.size;
+            Debug.Log($"[ScreenCaptureBridge] Focused Scene view on '{go.name}': pivot=({p.x:F2},{p.y:F2},{p.z:F2}), size={s:F2}");
+            var ic = System.Globalization.CultureInfo.InvariantCulture;
+            return "{\"success\":true,\"focused\":\"" + EscapeJson(go.name) + "\",\"pivot\":{\"x\":" + p.x.ToString("F3", ic) + ",\"y\":" + p.y.ToString("F3", ic) + ",\"z\":" + p.z.ToString("F3", ic) + "},\"size\":" + s.ToString("F3", ic) + "}";
+        }
+
+        /// <summary>
+        /// Save the current active scene to disk.
+        /// </summary>
+        /// <returns>JSON result string</returns>
+        public static string SaveScene()
+        {
+            try
+            {
+                var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+                // Mark dirty so changes made via Runtime API (bypassing Undo) are recognized
+                EditorSceneManager.MarkSceneDirty(scene);
+                bool saved = EditorSceneManager.SaveScene(scene);
+                if (saved)
+                {
+                    Debug.Log($"[ScreenCaptureBridge] Scene '{scene.name}' saved successfully to '{scene.path}'.");
+                    return $"{{\"success\":true,\"scene\":\"{EscapeJson(scene.name)}\",\"path\":\"{EscapeJson(scene.path)}\"}}";
+                }
+                else
+                {
+                    return BuildErrorJson($"Failed to save scene '{scene.name}'. It may be a new unsaved scene.");
+                }
+            }
+            catch (Exception ex)
+            {
+                return BuildErrorJson($"SaveScene failed: {ex.Message}");
+            }
         }
 
         private static string BuildManipulationSuccessJson(string operation, string direction, float amount, string description)

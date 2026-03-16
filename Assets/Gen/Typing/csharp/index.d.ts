@@ -77,12 +77,19 @@
         {
             protected [__keep_incompatibility]: never;
         }
-        interface IDisposable
-        {
-        }
         class Boolean extends System.ValueType implements System.IComparable, System.IComparable$1<boolean>, System.IConvertible, System.IEquatable$1<boolean>
         {
             protected [__keep_incompatibility]: never;
+        }
+        interface IDisposable
+        {
+        }
+        class Array extends System.Object implements System.Collections.IStructuralComparable, System.Collections.IStructuralEquatable, System.ICloneable, System.Collections.ICollection, System.Collections.IEnumerable, System.Collections.IList
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        interface IFormatProvider
+        {
         }
         interface Action$2<T1, T2>
         { 
@@ -293,11 +300,6 @@
             public static GetTypeFromCLSID ($clsid: System.Guid, $server: string, $throwOnError: boolean) : System.Type
             public static GetTypeFromProgID ($progID: string, $server: string, $throwOnError: boolean) : System.Type
         }
-        class Array extends System.Object implements System.Collections.IStructuralComparable, System.Collections.IStructuralEquatable, System.ICloneable, System.Collections.ICollection, System.Collections.IEnumerable, System.Collections.IList
-        {
-            protected [__keep_incompatibility]: never;
-            public get Length(): number;
-        }
         class Enum extends System.ValueType implements System.IFormattable, System.IComparable, System.IConvertible
         {
             protected [__keep_incompatibility]: never;
@@ -315,9 +317,6 @@
         class Guid extends System.ValueType implements System.IFormattable, System.ISpanFormattable, System.IComparable, System.IComparable$1<System.Guid>, System.IEquatable$1<System.Guid>
         {
             protected [__keep_incompatibility]: never;
-        }
-        interface IFormatProvider
-        {
         }
         interface Func$4<T1, T2, T3, TResult>
         { 
@@ -346,8 +345,13 @@
             protected [__keep_incompatibility]: never;
             public static CaptureScreenAsync ($maxWidth: number, $maxHeight: number, $callback: System.Action$1<string>) : void
             public static CaptureSceneViewAsync ($maxWidth: number, $maxHeight: number, $callback: System.Action$1<string>) : void
-            public static ManipulateSceneView ($operation: string, $direction: string, $amount: number, $callback: System.Action$1<string>) : void
             public static GetSceneViewState () : string
+            public static ManipulateSceneView ($operation: string, $direction: string, $amount: number, $callback: System.Action$1<string>) : void
+            public static GetGameObjectHierarchy ($name: string, $depth: number) : string
+            public static SelectGameObject ($name: string) : string
+            public static SetSceneViewCamera ($px: number, $py: number, $pz: number, $setPivot: boolean, $rx: number, $ry: number, $rz: number, $setRotation: boolean, $size: number) : string
+            public static FocusSceneViewOn ($gameObjectName: string) : string
+            public static SaveScene () : string
         }
         class TypeReflectionBridge extends System.Object
         {
@@ -413,8 +417,223 @@
         class ScriptEnv extends System.Object implements System.IDisposable
         {
             protected [__keep_incompatibility]: never;
-            public ExecuteModule ($specifier: string) : Puerts.ScriptObject
-            public Eval ($chunk: string, $chunkName?: string) : void
+        }
+    }
+    namespace UnityEngine {
+        /** Representation of 3D vectors and points.
+        */
+        class Vector3 extends System.ValueType implements System.IFormattable, System.IEquatable$1<UnityEngine.Vector3>
+        {
+            protected [__keep_incompatibility]: never;
+            public static kEpsilon : number
+            public static kEpsilonNormalSqrt : number
+            /** X component of the vector.
+            */
+            public x : number
+            /** Y component of the vector.
+            */
+            public y : number
+            /** Z component of the vector.
+            */
+            public z : number
+            /** Returns a normalized vector based on the current vector. The normalized vector has a magnitude of 1 and is in the same direction as the current vector. Returns a zero vector If the current vector is too small to be normalized.
+            */
+            public get normalized(): UnityEngine.Vector3;
+            /** Returns the length of this vector (Read Only).
+            */
+            public get magnitude(): number;
+            /** Returns the squared length of this vector (Read Only).
+            */
+            public get sqrMagnitude(): number;
+            /** Shorthand for writing Vector3(0, 0, 0).
+            */
+            public static get zero(): UnityEngine.Vector3;
+            /** Shorthand for writing Vector3(1, 1, 1).
+            */
+            public static get one(): UnityEngine.Vector3;
+            /** Shorthand for writing Vector3(0, 0, 1).
+            */
+            public static get forward(): UnityEngine.Vector3;
+            /** Shorthand for writing Vector3(0, 0, -1).
+            */
+            public static get back(): UnityEngine.Vector3;
+            /** Shorthand for writing Vector3(0, 1, 0).
+            */
+            public static get up(): UnityEngine.Vector3;
+            /** Shorthand for writing Vector3(0, -1, 0).
+            */
+            public static get down(): UnityEngine.Vector3;
+            /** Shorthand for writing Vector3(-1, 0, 0).
+            */
+            public static get left(): UnityEngine.Vector3;
+            /** Shorthand for writing Vector3(1, 0, 0).
+            */
+            public static get right(): UnityEngine.Vector3;
+            /** Shorthand for writing Vector3(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity).
+            */
+            public static get positiveInfinity(): UnityEngine.Vector3;
+            /** Shorthand for writing Vector3(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity).
+            */
+            public static get negativeInfinity(): UnityEngine.Vector3;
+            /** Spherically interpolates between two vectors.
+            */
+            public static Slerp ($a: UnityEngine.Vector3, $b: UnityEngine.Vector3, $t: number) : UnityEngine.Vector3
+            /** Spherically interpolates between two vectors.
+            */
+            public static SlerpUnclamped ($a: UnityEngine.Vector3, $b: UnityEngine.Vector3, $t: number) : UnityEngine.Vector3
+            /** Makes vectors normalized and orthogonal to each other.
+            */
+            public static OrthoNormalize ($normal: $Ref<UnityEngine.Vector3>, $tangent: $Ref<UnityEngine.Vector3>) : void
+            /** Makes vectors normalized and orthogonal to each other.
+            */
+            public static OrthoNormalize ($normal: $Ref<UnityEngine.Vector3>, $tangent: $Ref<UnityEngine.Vector3>, $binormal: $Ref<UnityEngine.Vector3>) : void
+            /** Rotates a vector current towards target.
+            * @param $current The vector being managed.
+            * @param $target The vector.
+            * @param $maxRadiansDelta The maximum angle in radians allowed for this rotation.
+            * @param $maxMagnitudeDelta The maximum allowed change in vector magnitude for this rotation.
+            * @returns The location that RotateTowards generates. 
+            */
+            public static RotateTowards ($current: UnityEngine.Vector3, $target: UnityEngine.Vector3, $maxRadiansDelta: number, $maxMagnitudeDelta: number) : UnityEngine.Vector3
+            /** Linearly interpolates between two points.
+            * @param $a Start value, returned when t = 0.
+            * @param $b End value, returned when t = 1.
+            * @param $t Value used to interpolate between a and b.
+            * @returns Interpolated value, equals to a + (b - a) * t. 
+            */
+            public static Lerp ($a: UnityEngine.Vector3, $b: UnityEngine.Vector3, $t: number) : UnityEngine.Vector3
+            /** Linearly interpolates between two vectors.
+            */
+            public static LerpUnclamped ($a: UnityEngine.Vector3, $b: UnityEngine.Vector3, $t: number) : UnityEngine.Vector3
+            /** Calculate a position between the points specified by current and target, moving no farther than the distance specified by maxDistanceDelta.
+            * @param $current The position to move from.
+            * @param $target The position to move towards.
+            * @param $maxDistanceDelta Distance to move current per call.
+            * @returns The new position. 
+            */
+            public static MoveTowards ($current: UnityEngine.Vector3, $target: UnityEngine.Vector3, $maxDistanceDelta: number) : UnityEngine.Vector3
+            /** Gradually changes a vector towards a desired goal over time.
+            * @param $current The current position.
+            * @param $target The position we are trying to reach.
+            * @param $currentVelocity The current velocity, this value is modified by the function every time you call it.
+            * @param $smoothTime Approximately the time it will take to reach the target. A smaller value will reach the target faster.
+            * @param $maxSpeed Optionally allows you to clamp the maximum speed.
+            * @param $deltaTime The time since the last call to this function. By default Time.deltaTime.
+            */
+            public static SmoothDamp ($current: UnityEngine.Vector3, $target: UnityEngine.Vector3, $currentVelocity: $Ref<UnityEngine.Vector3>, $smoothTime: number, $maxSpeed: number) : UnityEngine.Vector3
+            /** Gradually changes a vector towards a desired goal over time.
+            * @param $current The current position.
+            * @param $target The position we are trying to reach.
+            * @param $currentVelocity The current velocity, this value is modified by the function every time you call it.
+            * @param $smoothTime Approximately the time it will take to reach the target. A smaller value will reach the target faster.
+            * @param $maxSpeed Optionally allows you to clamp the maximum speed.
+            * @param $deltaTime The time since the last call to this function. By default Time.deltaTime.
+            */
+            public static SmoothDamp ($current: UnityEngine.Vector3, $target: UnityEngine.Vector3, $currentVelocity: $Ref<UnityEngine.Vector3>, $smoothTime: number) : UnityEngine.Vector3
+            /** Gradually changes a vector towards a desired goal over time.
+            * @param $current The current position.
+            * @param $target The position we are trying to reach.
+            * @param $currentVelocity The current velocity, this value is modified by the function every time you call it.
+            * @param $smoothTime Approximately the time it will take to reach the target. A smaller value will reach the target faster.
+            * @param $maxSpeed Optionally allows you to clamp the maximum speed.
+            * @param $deltaTime The time since the last call to this function. By default Time.deltaTime.
+            */
+            public static SmoothDamp ($current: UnityEngine.Vector3, $target: UnityEngine.Vector3, $currentVelocity: $Ref<UnityEngine.Vector3>, $smoothTime: number, $maxSpeed: number, $deltaTime: number) : UnityEngine.Vector3
+            public get_Item ($index: number) : number
+            public set_Item ($index: number, $value: number) : void
+            /** Set x, y and z components of an existing Vector3.
+            */
+            public Set ($newX: number, $newY: number, $newZ: number) : void
+            /** Multiplies two vectors component-wise.
+            */
+            public static Scale ($a: UnityEngine.Vector3, $b: UnityEngine.Vector3) : UnityEngine.Vector3
+            /** Multiplies every component of this vector by the same component of scale.
+            */
+            public Scale ($scale: UnityEngine.Vector3) : void
+            /** Cross Product of two vectors.
+            */
+            public static Cross ($lhs: UnityEngine.Vector3, $rhs: UnityEngine.Vector3) : UnityEngine.Vector3
+            /** Returns true if the given vector is exactly equal to this vector.
+            */
+            public Equals ($other: any) : boolean
+            public Equals ($other: UnityEngine.Vector3) : boolean
+            /** Reflects a vector off the plane defined by a normal.
+            * @param $inDirection The direction vector towards the plane.
+            * @param $inNormal The normal vector that defines the plane.
+            */
+            public static Reflect ($inDirection: UnityEngine.Vector3, $inNormal: UnityEngine.Vector3) : UnityEngine.Vector3
+            /** Returns a normalized vector based on the given vector. The normalized vector has a magnitude of 1 and is in the same direction as the given vector. Returns a zero vector If the given vector is too small to be normalized.
+            * @param $value The vector to be normalized.
+            * @returns A new vector with the same direction as the original vector but with a magnitude of 1.0. 
+            */
+            public static Normalize ($value: UnityEngine.Vector3) : UnityEngine.Vector3
+            /** Makes this vector have a magnitude of 1.
+            */
+            public Normalize () : void
+            /** Dot Product of two vectors.
+            */
+            public static Dot ($lhs: UnityEngine.Vector3, $rhs: UnityEngine.Vector3) : number
+            /** Projects a vector onto another vector.
+            */
+            public static Project ($vector: UnityEngine.Vector3, $onNormal: UnityEngine.Vector3) : UnityEngine.Vector3
+            /** Projects a vector onto a plane.
+            * @param $vector The vector to project on the plane.
+            * @param $planeNormal The normal which defines the plane to project on.
+            * @returns The orthogonal projection of vector on the plane. 
+            */
+            public static ProjectOnPlane ($vector: UnityEngine.Vector3, $planeNormal: UnityEngine.Vector3) : UnityEngine.Vector3
+            /** Calculates the angle between two vectors.
+            * @param $from The vector from which the angular difference is measured.
+            * @param $to The vector to which the angular difference is measured.
+            * @returns The angle in degrees between the two vectors. 
+            */
+            public static Angle ($from: UnityEngine.Vector3, $to: UnityEngine.Vector3) : number
+            /** Calculates the signed angle between vectors from and to in relation to axis.
+            * @param $from The vector from which the angular difference is measured.
+            * @param $to The vector to which the angular difference is measured.
+            * @param $axis A vector around which the other vectors are rotated.
+            * @returns Returns the signed angle between from and to in degrees. 
+            */
+            public static SignedAngle ($from: UnityEngine.Vector3, $to: UnityEngine.Vector3, $axis: UnityEngine.Vector3) : number
+            /** Returns the distance between a and b.
+            */
+            public static Distance ($a: UnityEngine.Vector3, $b: UnityEngine.Vector3) : number
+            /** Returns a copy of vector with its magnitude clamped to maxLength.
+            */
+            public static ClampMagnitude ($vector: UnityEngine.Vector3, $maxLength: number) : UnityEngine.Vector3
+            public static Magnitude ($vector: UnityEngine.Vector3) : number
+            public static SqrMagnitude ($vector: UnityEngine.Vector3) : number
+            /** Returns a vector that is made from the smallest components of two vectors.
+            */
+            public static Min ($lhs: UnityEngine.Vector3, $rhs: UnityEngine.Vector3) : UnityEngine.Vector3
+            /** Returns a vector that is made from the largest components of two vectors.
+            */
+            public static Max ($lhs: UnityEngine.Vector3, $rhs: UnityEngine.Vector3) : UnityEngine.Vector3
+            public static op_Addition ($a: UnityEngine.Vector3, $b: UnityEngine.Vector3) : UnityEngine.Vector3
+            public static op_Subtraction ($a: UnityEngine.Vector3, $b: UnityEngine.Vector3) : UnityEngine.Vector3
+            public static op_UnaryNegation ($a: UnityEngine.Vector3) : UnityEngine.Vector3
+            public static op_Multiply ($a: UnityEngine.Vector3, $d: number) : UnityEngine.Vector3
+            public static op_Multiply ($d: number, $a: UnityEngine.Vector3) : UnityEngine.Vector3
+            public static op_Division ($a: UnityEngine.Vector3, $d: number) : UnityEngine.Vector3
+            public static op_Equality ($lhs: UnityEngine.Vector3, $rhs: UnityEngine.Vector3) : boolean
+            public static op_Inequality ($lhs: UnityEngine.Vector3, $rhs: UnityEngine.Vector3) : boolean
+            /** Returns a formatted string for this vector.
+            * @param $format A numeric format string.
+            * @param $formatProvider An object that specifies culture-specific formatting.
+            */
+            public ToString () : string
+            /** Returns a formatted string for this vector.
+            * @param $format A numeric format string.
+            * @param $formatProvider An object that specifies culture-specific formatting.
+            */
+            public ToString ($format: string) : string
+            /** Returns a formatted string for this vector.
+            * @param $format A numeric format string.
+            * @param $formatProvider An object that specifies culture-specific formatting.
+            */
+            public ToString ($format: string, $formatProvider: System.IFormatProvider) : string
+            public constructor ($x: number, $y: number, $z: number)
+            public constructor ($x: number, $y: number)
         }
     }
     namespace System.Reflection {

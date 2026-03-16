@@ -1,12 +1,18 @@
 /**
- * Builtin: Scene View Navigation Functions
+ * Builtin: Scene View & Scene Manipulation Functions
  *
- * Allows AI code to manipulate the Unity Editor Scene view camera:
- *   - sceneViewZoom(direction, amount?)   – zoom forward/backward
- *   - sceneViewPan(direction, amount?)    – pan up/down/left/right
- *   - sceneViewOrbit(direction, amount?)  – orbit up/down/left/right
+ * Scene view camera control:
+ *   - sceneViewZoom / sceneViewPan / sceneViewOrbit  – incremental camera manipulation
+ *   - setSceneViewCamera(pivot, rotation, size)      – direct camera placement
+ *   - focusSceneViewOn(name)                         – frame a GameObject (like pressing F)
+ *   - getSceneViewState()                            – query current camera state
  *
- * Backed by C# ScreenCaptureBridge.ManipulateSceneView.
+ * Scene hierarchy & editing:
+ *   - getGameObjectHierarchy(name?, depth?)           – tree-structured hierarchy dump
+ *   - selectGameObject(name)                          – select in Editor
+ *   - saveScene()                                     – save current scene to disk
+ *
+ * Backed by C# ScreenCaptureBridge.
  */
 
 // ---- Description for tool description ----
@@ -31,6 +37,31 @@ export const description = `
   - Returns an object: \`{ success: boolean, pivot: {x,y,z}, rotation: {x,y,z,w}, eulerAngles: {x,y,z}, size: number, orthographic: boolean }\`.
   - Access properties directly, e.g. \`getSceneViewState().pivot.x\`.
   - Use this to check the current camera position/rotation/zoom before or after manipulation.
+
+- **\`setSceneViewCamera(pivot?, rotation?, size?)\`** — Directly set the Scene view camera state (synchronous).
+  - \`pivot\` (object, optional): \`{x, y, z}\` — the world-space point the camera orbits around.
+  - \`rotation\` (object, optional): \`{x, y, z}\` — euler angles in degrees.
+  - \`size\` (number, optional): Zoom level (positive float). 0 or omitted = keep current.
+  - Returns an object: \`{ success, pivot, eulerAngles, size }\` with the resulting state.
+  - Much more efficient than multiple zoom/pan/orbit calls when you know the target pose.
+
+- **\`focusSceneViewOn(gameObjectName)\`** — Frame a GameObject in the Scene view (like pressing F in the Editor).
+  - \`gameObjectName\` (string): Name of the GameObject to focus on (uses GameObject.Find).
+  - Automatically selects the object and adjusts the Scene view to frame it.
+  - Returns an object: \`{ success, focused, pivot, size }\`.
+
+- **\`getGameObjectHierarchy(name?, depth?)\`** — Get the hierarchy of GameObjects as a tree structure.
+  - \`name\` (string, optional): Name of a root GameObject. Empty/omitted = all root objects in the active scene.
+  - \`depth\` (number, optional, default 0): Max traversal depth. 0 = unlimited.
+  - Returns an object: \`{ success, hierarchy: [...] }\` where each node has \`{ name, active, components, children? }\`.
+  - When depth is limited, nodes beyond the limit show \`childCount\` instead of \`children\`.
+
+- **\`selectGameObject(name)\`** — Select a GameObject in the Unity Editor (highlights it in Hierarchy & Scene view).
+  - \`name\` (string): Name of the GameObject to select (uses GameObject.Find).
+  - Returns an object: \`{ success, selected }\`.
+
+- **\`saveScene()\`** — Save the current active scene to disk.
+  - Returns an object: \`{ success, scene, path }\` on success.
 `.trim();
 
 // ---- Helper ----
@@ -124,8 +155,76 @@ function getSceneViewState(): SceneViewState {
     return JSON.parse(json);
 }
 
+// ---- New functions: direct camera placement, hierarchy, selection, save ----
+
+interface Vector3Like {
+    x: number;
+    y: number;
+    z: number;
+}
+
+/**
+ * Directly set the Scene view camera position, rotation, and zoom.
+ * @param pivot  World-space pivot point {x,y,z} (optional)
+ * @param rotation Euler angles {x,y,z} in degrees (optional)
+ * @param size Zoom level (optional, 0 = keep current)
+ */
+function setSceneViewCamera(
+    pivot?: Vector3Like,
+    rotation?: Vector3Like,
+    size?: number
+): any {
+    const json = CS.LLMAgent.ScreenCaptureBridge.SetSceneViewCamera(
+        pivot?.x ?? 0, pivot?.y ?? 0, pivot?.z ?? 0, !!pivot,
+        rotation?.x ?? 0, rotation?.y ?? 0, rotation?.z ?? 0, !!rotation,
+        size ?? 0
+    );
+    return JSON.parse(json);
+}
+
+/**
+ * Focus the Scene view on a specific GameObject (like pressing F in the Editor).
+ * @param gameObjectName Name of the GameObject to focus on
+ */
+function focusSceneViewOn(gameObjectName: string): any {
+    const json = CS.LLMAgent.ScreenCaptureBridge.FocusSceneViewOn(gameObjectName);
+    return JSON.parse(json);
+}
+
+/**
+ * Get the hierarchy of GameObjects as a tree structure.
+ * @param name Root GameObject name (empty = all roots in active scene)
+ * @param depth Max traversal depth (0 = unlimited)
+ */
+function getGameObjectHierarchy(name?: string, depth?: number): any {
+    const json = CS.LLMAgent.ScreenCaptureBridge.GetGameObjectHierarchy(name ?? '', depth ?? 0);
+    return JSON.parse(json);
+}
+
+/**
+ * Select a GameObject in the Unity Editor.
+ * @param name Name of the GameObject to select
+ */
+function selectGameObject(name: string): any {
+    const json = CS.LLMAgent.ScreenCaptureBridge.SelectGameObject(name);
+    return JSON.parse(json);
+}
+
+/**
+ * Save the current active scene to disk.
+ */
+function saveScene(): any {
+    const json = CS.LLMAgent.ScreenCaptureBridge.SaveScene();
+    return JSON.parse(json);
+}
+
 // Register as globals in the eval VM
 (globalThis as any).sceneViewZoom = sceneViewZoom;
 (globalThis as any).sceneViewPan = sceneViewPan;
 (globalThis as any).sceneViewOrbit = sceneViewOrbit;
 (globalThis as any).getSceneViewState = getSceneViewState;
+(globalThis as any).setSceneViewCamera = setSceneViewCamera;
+(globalThis as any).focusSceneViewOn = focusSceneViewOn;
+(globalThis as any).getGameObjectHierarchy = getGameObjectHierarchy;
+(globalThis as any).selectGameObject = selectGameObject;
+(globalThis as any).saveScene = saveScene;
