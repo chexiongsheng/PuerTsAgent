@@ -39246,20 +39246,6 @@ function extractToolErrorMessage(output) {
 }
 __name(extractToolErrorMessage, "extractToolErrorMessage");
 var compressedUpToIndex = 0;
-function compressHistoryMessages() {
-  const end = conversationHistory.length;
-  if (compressedUpToIndex >= end) return;
-  let replacedCount = 0;
-  for (let i2 = compressedUpToIndex; i2 < end; i2++) {
-    const storeBefore = imageStore.size;
-    if (imageStore.size > storeBefore) replacedCount++;
-  }
-  compressedUpToIndex = end;
-  if (replacedCount > 0) {
-    console.log(`[Agent] Compressed ${replacedCount} image(s) in history (imageStore size: ${imageStore.size})`);
-  }
-}
-__name(compressHistoryMessages, "compressHistoryMessages");
 function estimateTokens(messages) {
   let totalChars = 0;
   for (const msg of messages) {
@@ -39669,7 +39655,6 @@ function stripOldUserImages() {
 __name(stripOldUserImages, "stripOldUserImages");
 async function prepareHistory() {
   stripOldUserImages();
-  compressHistoryMessages();
   if (ENABLE_SLIDING_WINDOW) {
     const estimated = estimateTokens(conversationHistory);
     if (estimated > MAX_INPUT_TOKENS) {

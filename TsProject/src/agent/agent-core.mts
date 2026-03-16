@@ -403,27 +403,6 @@ function extractToolErrorMessage(output: unknown): string {
  */
 let compressedUpToIndex = 0;
 
-/**
- * Compress big strings in conversation history **in-place**.
- * Called once at the start of sendMessage() to shrink messages from
- * previous rounds before they are sent to generateText().
- */
-function compressHistoryMessages(): void {
-    const end = conversationHistory.length;
-    if (compressedUpToIndex >= end) return;
-
-    let replacedCount = 0;
-    for (let i = compressedUpToIndex; i < end; i++) {
-        const storeBefore = imageStore.size;
-        if (imageStore.size > storeBefore) replacedCount++;
-    }
-
-    compressedUpToIndex = end;
-    if (replacedCount > 0) {
-        console.log(`[Agent] Compressed ${replacedCount} image(s) in history (imageStore size: ${imageStore.size})`);
-    }
-}
-
 // ============================================================
 // Token estimation helpers
 // ============================================================
@@ -1023,7 +1002,6 @@ function stripOldUserImages(): void {
  */
 async function prepareHistory(): Promise<void> {
     stripOldUserImages();
-    compressHistoryMessages();
 
     if (ENABLE_SLIDING_WINDOW) {
         const estimated = estimateTokens(conversationHistory);
