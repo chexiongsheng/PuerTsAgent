@@ -364,18 +364,6 @@ function replaceImageStringsInPlace(obj: any, parentKey: string = ''): boolean {
 }
 
 /**
- * Compress image base64 strings inside a single message **in-place**.
- * Returns true if any replacement was made.
- */
-function compressMessage(msg: any): boolean {
-    try {
-        return replaceImageStringsInPlace(msg);
-    } catch {
-        return false;
-    }
-}
-
-/**
  * Check whether a tool result output indicates success.
  * - If output is an object with a `success` boolean field, use it directly.
  * - If output is a string containing failure keywords, treat as failure.
@@ -410,22 +398,6 @@ function extractToolErrorMessage(output: unknown): string {
 }
 
 /**
- * Compress an array of messages, skipping the last `skipTail` messages.
- * Returns a new array with compressed copies; originals are untouched.
- */
-function compressMessages(messages: any[], skipTail: number = 0): { replaced: number } {
-    const end = messages.length - skipTail;
-    const storeSizeBefore = imageStore.size;
-
-    for (let i = 0; i < end; i++) {
-        compressMessage(messages[i]);
-    }
-
-    const replaced = imageStore.size - storeSizeBefore;
-    return { replaced };
-}
-
-/**
  * The index of the last message in conversationHistory that has already
  * been compressed in-place. We only process new messages each time.
  */
@@ -443,7 +415,6 @@ function compressHistoryMessages(): void {
     let replacedCount = 0;
     for (let i = compressedUpToIndex; i < end; i++) {
         const storeBefore = imageStore.size;
-        compressMessage(conversationHistory[i]);
         if (imageStore.size > storeBefore) replacedCount++;
     }
 
@@ -893,12 +864,7 @@ function handlePrepareStep({ messages, stepNumber, steps }: any): any {
     });
     console.log(`[Agent] prepareStep(${stepNumber}): ${messages.length} msgs, last3=[${lastFew.join(' | ')}]`);
 
-    // ---- (1) Compress image base64 in OLDER messages (in-place) ----
-    const { replaced } = compressMessages(messages, 2);
     let newMessages = messages;
-    if (replaced > 0) {
-        console.log(`[Agent] prepareStep(${stepNumber}): compressed ${replaced} image(s) (imageStore size: ${imageStore.size})`);
-    }
 
     // ---- (1.5) Sliding window: check actual token usage from last step ----
     if (ENABLE_SLIDING_WINDOW) {
@@ -940,7 +906,7 @@ function handlePrepareStep({ messages, stepNumber, steps }: any): any {
     // ---- (2) Extract screenshot images from the last tool message ----
     // If messages were modified (compressed in-place or trimmed), we need to
     // return them. Trimming creates a new array, so check identity.
-    const modified = replaced > 0 || newMessages !== messages;
+    const modified = newMessages !== messages;
 
     const lastMsg = newMessages[newMessages.length - 1];
     if (!lastMsg || lastMsg.role !== 'tool') {

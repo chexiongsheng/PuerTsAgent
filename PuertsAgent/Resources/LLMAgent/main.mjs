@@ -39085,7 +39085,6 @@ var ImageStore = class {
 };
 var imageStore = new ImageStore();
 var currentAbortController = null;
-var IMAGE_COMPRESS_THRESHOLD = 500;
 var ENABLE_SLIDING_WINDOW = true;
 var CHARS_PER_TOKEN = 4;
 var MAX_INPUT_TOKENS = 6e5;
@@ -39221,58 +39220,6 @@ var conversationHistory = [];
 var currentConfig = { ...DEFAULT_CONFIG };
 var isConfigured = false;
 var historySummary = null;
-function isImageBase64Key(key) {
-  return key === "data" || key === "base64" || key === "image";
-}
-__name(isImageBase64Key, "isImageBase64Key");
-function replaceImageStringsInPlace(obj, parentKey = "") {
-  if (obj === null || obj === void 0) return false;
-  if (Array.isArray(obj)) {
-    let changed = false;
-    for (let i2 = 0; i2 < obj.length; i2++) {
-      const item = obj[i2];
-      if (typeof item === "string") {
-        if (item.length >= IMAGE_COMPRESS_THRESHOLD && isImageBase64Key(parentKey)) {
-          const idx = imageStore.store(item);
-          obj[i2] = imageStore.placeholder(idx, item.length);
-          changed = true;
-        }
-      } else {
-        if (replaceImageStringsInPlace(item, parentKey)) changed = true;
-      }
-    }
-    return changed;
-  }
-  if (typeof obj === "object") {
-    if (obj.type === "image" && typeof obj.image === "string") {
-      return false;
-    }
-    let changed = false;
-    for (const key of Object.keys(obj)) {
-      const val = obj[key];
-      if (typeof val === "string") {
-        if (val.length >= IMAGE_COMPRESS_THRESHOLD && isImageBase64Key(key)) {
-          const idx = imageStore.store(val);
-          obj[key] = imageStore.placeholder(idx, val.length);
-          changed = true;
-        }
-      } else {
-        if (replaceImageStringsInPlace(val, key)) changed = true;
-      }
-    }
-    return changed;
-  }
-  return false;
-}
-__name(replaceImageStringsInPlace, "replaceImageStringsInPlace");
-function compressMessage(msg) {
-  try {
-    return replaceImageStringsInPlace(msg);
-  } catch {
-    return false;
-  }
-}
-__name(compressMessage, "compressMessage");
 function isToolResultSuccess(output) {
   if (output != null && typeof output === "object" && "success" in output) {
     return !!output.success;
@@ -39298,16 +39245,6 @@ function extractToolErrorMessage(output) {
   return "Unknown error";
 }
 __name(extractToolErrorMessage, "extractToolErrorMessage");
-function compressMessages(messages, skipTail = 0) {
-  const end = messages.length - skipTail;
-  const storeSizeBefore = imageStore.size;
-  for (let i2 = 0; i2 < end; i2++) {
-    compressMessage(messages[i2]);
-  }
-  const replaced = imageStore.size - storeSizeBefore;
-  return { replaced };
-}
-__name(compressMessages, "compressMessages");
 var compressedUpToIndex = 0;
 function compressHistoryMessages() {
   const end = conversationHistory.length;
@@ -39315,7 +39252,6 @@ function compressHistoryMessages() {
   let replacedCount = 0;
   for (let i2 = compressedUpToIndex; i2 < end; i2++) {
     const storeBefore = imageStore.size;
-    compressMessage(conversationHistory[i2]);
     if (imageStore.size > storeBefore) replacedCount++;
   }
   compressedUpToIndex = end;
@@ -39619,11 +39555,7 @@ function handlePrepareStep({ messages, stepNumber, steps }) {
     return `${role}:${contentPreview}`;
   });
   console.log(`[Agent] prepareStep(${stepNumber}): ${messages.length} msgs, last3=[${lastFew.join(" | ")}]`);
-  const { replaced } = compressMessages(messages, 2);
   let newMessages = messages;
-  if (replaced > 0) {
-    console.log(`[Agent] prepareStep(${stepNumber}): compressed ${replaced} image(s) (imageStore size: ${imageStore.size})`);
-  }
   if (ENABLE_SLIDING_WINDOW) {
     const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
     const lastInputTokens = lastStep?.usage?.inputTokens;
@@ -39652,7 +39584,7 @@ ${historySummary}`
       }
     }
   }
-  const modified = replaced > 0 || newMessages !== messages;
+  const modified = newMessages !== messages;
   const lastMsg = newMessages[newMessages.length - 1];
   if (!lastMsg || lastMsg.role !== "tool") {
     return modified ? { messages: newMessages } : void 0;
