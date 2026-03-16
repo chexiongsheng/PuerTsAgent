@@ -17,9 +17,7 @@
 
 // ---- Summary for tool description (always in context) ----
 
-export const summary = `**scene-view** — Scene view camera control & scene manipulation.
-Functions: \`sceneViewZoom\`, \`sceneViewPan\`, \`sceneViewOrbit\`, \`getSceneViewState\`, \`setSceneViewCamera\`, \`focusSceneViewOn\`, \`getGameObjectHierarchy\`, \`selectGameObject\`, \`saveScene\`.
-Use \`await import('LLMAgent/builtin/scene-view.mjs')\` to access. **You MUST read \`.description\` before first use to get correct parameter signatures; wrong arguments will throw an error.**`;
+export const summary = `**scene-view** — Scene view camera control, scene object hierarchy inspection, and scene manipulation. Read \`.description\` to see available functions and their signatures.`;
 
 // ---- Description for on-demand access via import ----
 

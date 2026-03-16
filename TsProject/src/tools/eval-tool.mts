@@ -25,11 +25,26 @@ const builtinSummaries: string[] = (() => {
 /** Builtin helper module summaries, joined for inclusion in the tool description. */
 export const builtinSummariesText: string = builtinSummaries.length > 0
     ? '\n\n### Built-in Helper Modules\n\n' +
-      'The following helper modules are available in the evalJsCode VM. ' +
-      'Use ESM dynamic `import()` to access their functions (e.g. `const sv = await import(\'LLMAgent/builtin/scene-view.mjs\'); sv.focusSceneViewOn(\'Main Camera\');`). ' +
-      '**IMPORTANT**: Before calling ANY module function for the first time, you MUST first import the module and read its `.description` export to learn the correct parameter signatures. ' +
-      'All functions validate their arguments at runtime and will throw descriptive errors if called with wrong parameters. ' +
-      'Do NOT guess function signatures from the function name alone.\n\n' +
+      'Several helper modules are pre-loaded in the evalJsCode VM under the path prefix `LLMAgent/builtin/`. ' +
+      'Each module exports:\n' +
+      '- **`description`** — a detailed string documenting every function signature and usage.\n' +
+      '- **Named functions** — the actual helper functions you can call.\n\n' +
+      'To use a module, load it via ESM dynamic `import()`.\n\n' +
+      '**IMPORTANT**: The summaries below describe what each module does, but intentionally do NOT list function names or signatures. ' +
+      'You MUST first execute a script that reads the module\'s `.description` export to discover available functions and their correct parameter signatures. ' +
+      'All functions validate their arguments at runtime and will throw errors if called with wrong parameters. ' +
+      'NEVER guess or assume function names — always read `.description` first.\n\n' +
+      'Step 1 — Read description (first-time only):\n' +
+      '```\nasync function execute() {\n' +
+      '    const sv = await import(\'LLMAgent/builtin/scene-view.mjs\');\n' +
+      '    return sv.description;\n' +
+      '}\n```\n\n' +
+      'Step 2 — Call functions after you know the signatures:\n' +
+      '```\nasync function execute() {\n' +
+      '    const sv = await import(\'LLMAgent/builtin/scene-view.mjs\');\n' +
+      '    return sv.focusSceneViewOn(\'Main Camera\');\n' +
+      '}\n```\n\n' +
+      'Available modules:\n\n' +
       builtinSummaries.join('\n\n')
     : '';
 

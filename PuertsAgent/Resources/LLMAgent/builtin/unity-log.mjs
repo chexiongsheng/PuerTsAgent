@@ -2,9 +2,7 @@ var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
 // src/builtin/unity-log.mts
-var summary = `**unity-log** \u2014 Unity console log access.
-Functions: \`getUnityLogs\`, \`getUnityLogSummary\`.
-Use \`await import('LLMAgent/builtin/unity-log.mjs')\` to access. **You MUST read \`.description\` before first use to get correct parameter signatures; wrong arguments will throw an error.**`;
+var summary = `**unity-log** \u2014 Unity console log access (retrieve and summarize recent logs). Read \`.description\` to see available functions and their signatures.`;
 var description = `
 - **\`getUnityLogs(count?, logType?)\`** \u2014 Get recent Unity console logs.
   - \`count\` (number, default 20): Number of log entries to retrieve (1-50).

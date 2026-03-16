@@ -2,9 +2,7 @@ var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
 // src/builtin/type-reflection.mts
-var summary = `**type-reflection** \u2014 C# type introspection via reflection.
-Functions: \`listNamespaces\`, \`listTypesInNamespace\`, \`getTypeDetails\`.
-Use \`await import('LLMAgent/builtin/type-reflection.mjs')\` to access. **You MUST read \`.description\` before first use to get correct parameter signatures; wrong arguments will throw an error.**`;
+var summary = `**type-reflection** \u2014 C# type introspection via reflection (list namespaces, types, and type details). Read \`.description\` to see available functions and their signatures.`;
 var description = `
 - **\`listNamespaces()\`** \u2014 List all C# namespaces available across all loaded assemblies.
   - Returns a parsed JSON object with a \`namespaces\` array of namespace name strings.

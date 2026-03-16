@@ -11,9 +11,7 @@
 
 // ---- Summary for tool description (always in context) ----
 
-export const summary = `**type-reflection** — C# type introspection via reflection.
-Functions: \`listNamespaces\`, \`listTypesInNamespace\`, \`getTypeDetails\`.
-Use \`await import('LLMAgent/builtin/type-reflection.mjs')\` to access. **You MUST read \`.description\` before first use to get correct parameter signatures; wrong arguments will throw an error.**`;
+export const summary = `**type-reflection** — C# type introspection via reflection (list namespaces, types, and type details). Read \`.description\` to see available functions and their signatures.`;
 
 // ---- Description for on-demand access via import ----
 

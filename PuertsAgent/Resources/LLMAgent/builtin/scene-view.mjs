@@ -2,9 +2,7 @@ var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
 // src/builtin/scene-view.mts
-var summary = `**scene-view** \u2014 Scene view camera control & scene manipulation.
-Functions: \`sceneViewZoom\`, \`sceneViewPan\`, \`sceneViewOrbit\`, \`getSceneViewState\`, \`setSceneViewCamera\`, \`focusSceneViewOn\`, \`getGameObjectHierarchy\`, \`selectGameObject\`, \`saveScene\`.
-Use \`await import('LLMAgent/builtin/scene-view.mjs')\` to access. **You MUST read \`.description\` before first use to get correct parameter signatures; wrong arguments will throw an error.**`;
+var summary = `**scene-view** \u2014 Scene view camera control, scene object hierarchy inspection, and scene manipulation. Read \`.description\` to see available functions and their signatures.`;
 var description = `
 - **\`sceneViewZoom(direction, amount?)\`** \u2014 Zoom the Scene view camera in or out (like mouse scroll wheel).
   - \`direction\` (string): \`'forward'\` / \`'in'\` to zoom closer, \`'backward'\` / \`'out'\` to zoom farther.

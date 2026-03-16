@@ -7,9 +7,7 @@
 
 // ---- Summary for tool description (always in context) ----
 
-export const summary = `**unity-log** — Unity console log access.
-Functions: \`getUnityLogs\`, \`getUnityLogSummary\`.
-Use \`await import('LLMAgent/builtin/unity-log.mjs')\` to access. **You MUST read \`.description\` before first use to get correct parameter signatures; wrong arguments will throw an error.**`;
+export const summary = `**unity-log** — Unity console log access (retrieve and summarize recent logs). Read \`.description\` to see available functions and their signatures.`;
 
 // ---- Description for on-demand access via import ----
 
