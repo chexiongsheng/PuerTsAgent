@@ -845,8 +845,9 @@ function handlePrepareStep({ messages, stepNumber, steps }: any): any {
 
     let newMessages = messages;
 
-    // ---- (1.5) Sliding window: check actual token usage from last step ----
+    // ---- (1) Sliding window: check actual token usage from last step ----
     if (ENABLE_SLIDING_WINDOW) {
+        // 工具的调用过程中也可能产生token超标的情况，如果超了，会prune，还超就emergency trim，而prepareHistory是prune+compaction
         const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
         const lastInputTokens = lastStep?.usage?.inputTokens;
         const overBudget = lastInputTokens
