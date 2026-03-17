@@ -39250,8 +39250,27 @@ function createSkillTools() {
 __name(createSkillTools, "createSkillTools");
 
 // src/agent/prompt.mts
-var SYSTEM_PROMPT = `You are a helpful AI assistant running inside Unity via PuerTS (a TypeScript/JavaScript runtime for Unity). You can help with game development, scripting, and general questions. Be concise and practical.
-
+var roleDefinition = "";
+function initSystemPrompt() {
+  const root = getResourceRoot();
+  if (!root) {
+    console.warn("[Prompt] Resource root not set, skipping system-prompt loading.");
+    return;
+  }
+  const asset = CS.UnityEngine.Resources.Load(
+    `${root}/system-prompt.md`,
+    puer.$typeof(CS.UnityEngine.TextAsset)
+  );
+  if (asset && asset.text) {
+    roleDefinition = asset.text.trim();
+    console.log(`[Prompt] Loaded system-prompt from Resources/${root}/system-prompt.md.txt`);
+  } else {
+    console.warn(`[Prompt] No system-prompt.md.txt found at Resources/${root}/, using empty role definition.`);
+    roleDefinition = "";
+  }
+}
+__name(initSystemPrompt, "initSystemPrompt");
+var FRAMEWORK_PROMPT = `
 ## Context Compression \u2014 Image Placeholders
 
 To save context space, base64-encoded image data in **past** tool call results
@@ -39273,7 +39292,9 @@ If the \`loadSkill\` tool is available, you **MUST** call it to load the relevan
 The evalJsCode tool runs in a **pure V8 engine** \u2014 there is NO \`window\`, \`document\`, \`DOM\`, or any browser/Node.js API. However, \`setTimeout\`, \`setInterval\`, \`clearTimeout\`, and \`clearInterval\` are available (provided by PuerTS). To persist state across calls, use \`globalThis.myVar = ...\` or top-level \`var\` declarations.
 `;
 function buildSystemPrompt(imagePrefix) {
-  return SYSTEM_PROMPT.replace(/\{IMAGE_PREFIX\}/g, imagePrefix);
+  const prompt = roleDefinition ? `${roleDefinition}
+${FRAMEWORK_PROMPT}` : FRAMEWORK_PROMPT.trimStart();
+  return prompt.replace(/\{IMAGE_PREFIX\}/g, imagePrefix);
 }
 __name(buildSystemPrompt, "buildSystemPrompt");
 
@@ -39997,6 +40018,7 @@ function onInitialize(root, onReady) {
   setResourceRoot(root);
   (async () => {
     try {
+      initSystemPrompt();
       await initBuiltins();
       initSkills();
       console.log("[Agent] Resource initialization complete.");

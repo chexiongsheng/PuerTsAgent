@@ -18,6 +18,7 @@ import {
     getIsConfigured,
 } from './agent/agent-core.mjs';
 import { setResourceRoot } from './resource-root.mjs';
+import { initSystemPrompt } from './agent/prompt.mjs';
 import { initSkills } from './tools/skill-tool.mjs';
 import { initBuiltins } from './tools/eval-tool.mjs';
 
@@ -164,9 +165,10 @@ export function onIsConfigured(): boolean {
 export function onInitialize(root: string, onReady: CS.System.Action): void {
     setResourceRoot(root);
 
-    // Async initialization — load builtins (supports top-level await) then skills
+    // Async initialization — load system prompt, builtins (supports top-level await) then skills
     (async () => {
         try {
+            initSystemPrompt();
             await initBuiltins();
             initSkills();
             console.log('[Agent] Resource initialization complete.');
