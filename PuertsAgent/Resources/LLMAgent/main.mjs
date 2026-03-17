@@ -39208,51 +39208,6 @@ var ImageStore = class {
   }
 };
 var imageStore = new ImageStore();
-var IMAGE_COMPRESS_THRESHOLD = 500;
-function isImageBase64Key(key) {
-  return key === "data" || key === "base64" || key === "image";
-}
-__name(isImageBase64Key, "isImageBase64Key");
-function replaceImageStringsInPlace(obj, parentKey = "") {
-  if (obj === null || obj === void 0) return false;
-  if (Array.isArray(obj)) {
-    let changed = false;
-    for (let i2 = 0; i2 < obj.length; i2++) {
-      const item = obj[i2];
-      if (typeof item === "string") {
-        if (item.length >= IMAGE_COMPRESS_THRESHOLD && isImageBase64Key(parentKey)) {
-          const idx = imageStore.store(item);
-          obj[i2] = imageStore.placeholder(idx, item.length);
-          changed = true;
-        }
-      } else {
-        if (replaceImageStringsInPlace(item, parentKey)) changed = true;
-      }
-    }
-    return changed;
-  }
-  if (typeof obj === "object") {
-    if (obj.type === "image" && typeof obj.image === "string") {
-      return false;
-    }
-    let changed = false;
-    for (const key of Object.keys(obj)) {
-      const val = obj[key];
-      if (typeof val === "string") {
-        if (val.length >= IMAGE_COMPRESS_THRESHOLD && isImageBase64Key(key)) {
-          const idx = imageStore.store(val);
-          obj[key] = imageStore.placeholder(idx, val.length);
-          changed = true;
-        }
-      } else {
-        if (replaceImageStringsInPlace(val, key)) changed = true;
-      }
-    }
-    return changed;
-  }
-  return false;
-}
-__name(replaceImageStringsInPlace, "replaceImageStringsInPlace");
 function stripOldUserImages(conversationHistory2) {
   let lastUserIdx = -1;
   for (let i2 = conversationHistory2.length - 1; i2 >= 0; i2--) {
@@ -39719,9 +39674,6 @@ ${summary}`
 }
 __name(handlePrepareStep, "handlePrepareStep");
 async function prepareHistory() {
-  for (const msg of conversationHistory) {
-    replaceImageStringsInPlace(msg);
-  }
   stripOldUserImages(conversationHistory);
   if (ENABLE_SLIDING_WINDOW) {
     const estimated = estimateTokens(conversationHistory);

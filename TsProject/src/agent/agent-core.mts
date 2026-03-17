@@ -8,7 +8,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createScreenshotTools } from '../tools/screenshot-tool.mjs';
 import { createEvalTools } from '../tools/eval-tool.mjs';
 import { buildSystemPrompt } from './prompt.mjs';
-import { imageStore, stripOldUserImages, replaceImageStringsInPlace, createRetrieveImageTool } from './image-store.mjs';
+import { imageStore, stripOldUserImages, createRetrieveImageTool } from './image-store.mjs';
 import {
     ENABLE_SLIDING_WINDOW, MAX_INPUT_TOKENS, MIN_KEEP_MESSAGES,
     estimateTokens, pruneOldToolOutputs, trimMessagesByTokenBudget,
@@ -326,11 +326,6 @@ function handlePrepareStep({ messages, stepNumber, steps }: any): any {
  * Shared pre-processing for both sendMessage and continueGeneration.
  */
 async function prepareHistory(): Promise<void> {
-    // Compress base64 image strings in tool results with placeholders
-    for (const msg of conversationHistory) {
-        replaceImageStringsInPlace(msg);
-    }
-
     stripOldUserImages(conversationHistory);
 
     if (ENABLE_SLIDING_WINDOW) {
