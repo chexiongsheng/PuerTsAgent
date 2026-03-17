@@ -1,6 +1,6 @@
 ---
 name: puerts-interop
-description: "PuerTS JS ↔ C# interop rules: CS/puer globals, out/ref params, generics, operators, Array/List indexer access, async/Task, Unity edit-mode safety"
+description: "PuerTS JS ↔ C# interop rules: CS/puer globals, out/ref params, generics, operators, Array/List indexer access, async/Task. CRITICAL: Unity edit-mode safety — use sharedMaterial/sharedMesh/DestroyImmediate instead of runtime-only APIs"
 ---
 
 ## PuerTS: JS ↔ C# Interop Rules
@@ -99,6 +99,62 @@ You are running in a PuerTS environment. Below are the rules for interacting bet
 - The `CS` global object is always available in the PuerTS JS environment for accessing any C# type.
 - The `puer` global object provides PuerTS helper APIs: `$ref`, `$unref`, `$generic`, `$typeof`, `$promise`.
 
-### Unity Edit Mode Detection
+### Unity Edit Mode Detection (CRITICAL)
 
-Before using runtime-only APIs (e.g. `Destroy`, `MeshFilter.mesh`, coroutines), first check `CS.UnityEngine.Application.isPlaying` via `evalJsCode` and use edit-mode-safe alternatives when needed (e.g. `DestroyImmediate`, `sharedMesh`).
+The agent typically runs in **Edit Mode** (`Application.isPlaying == false`). Many Unity APIs behave differently or cause resource leaks in Edit Mode. **Always follow these rules:**
+
+#### Rule 1 — Check Play Mode When Uncertain
+```js
+const isPlaying = CS.UnityEngine.Application.isPlaying;
+```
+Use this to branch logic when an API has different edit/play behavior.
+
+#### Rule 2 — Edit-Mode-Safe API Substitutions
+
+Always use the **edit-mode-safe** column unless you have confirmed `isPlaying == true`:
+
+| ❌ Runtime-only API | ✅ Edit-mode-safe alternative | Reason |
+|---|---|---|
+| `renderer.material` | `renderer.sharedMaterial` | `.material` instantiates a copy that leaks in edit mode |
+| `renderer.materials` | `renderer.sharedMaterials` | Same — creates leaked copies |
+| `meshFilter.mesh` | `meshFilter.sharedMesh` | `.mesh` instantiates a copy that leaks in edit mode |
+| `Object.Destroy(obj)` | `Object.DestroyImmediate(obj)` | `Destroy` is deferred and does not execute in edit mode |
+| `StartCoroutine(...)` | Use `async/await` or `EditorApplication.update` | Coroutines do not run in edit mode |
+| `Instantiate(prefab)` as runtime spawn | `PrefabUtility.InstantiatePrefab(prefab)` | Keeps prefab link in edit mode |
+| `gameObject.SetActive(...)` then rely on `Awake/Start` | Manually initialize | `Awake`/`Start` are not called in edit mode |
+
+#### Rule 3 — Material & Mesh Property Modification
+When you only need to **read** material/mesh properties, always use `shared*` variants:
+```js
+// ✅ Correct — no leak
+let color = renderer.sharedMaterial.color;
+
+// ❌ Wrong — creates a material instance that leaks
+let color = renderer.material.color;
+```
+
+When you need to **modify** a material on a specific object without affecting others, explicitly create and track the instance:
+```js
+// Only in play mode — or accept the leak in edit mode
+if (CS.UnityEngine.Application.isPlaying) {
+    renderer.material.color = new CS.UnityEngine.Color(1, 0, 0, 1);
+} else {
+    // In edit mode, modify the shared material (affects all users)
+    // or create a new material and assign it
+    let mat = CS.UnityEngine.Object.Instantiate(renderer.sharedMaterial);
+    mat.color = new CS.UnityEngine.Color(1, 0, 0, 1);
+    renderer.sharedMaterial = mat;
+}
+```
+
+#### Rule 4 — Destruction
+```js
+// ✅ Works in both edit and play mode
+CS.UnityEngine.Object.DestroyImmediate(go);
+
+// ❌ Only works in play mode
+CS.UnityEngine.Object.Destroy(go);
+```
+
+#### Rule 5 — Default Assumption
+**Unless the user explicitly says they are in Play Mode, always assume Edit Mode and use edit-mode-safe APIs.**
