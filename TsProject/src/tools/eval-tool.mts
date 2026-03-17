@@ -25,7 +25,7 @@ const builtinSummaries: string[] = (() => {
 /** Builtin helper module summaries, joined for inclusion in the tool description. */
 export const builtinSummariesText: string = builtinSummaries.length > 0
     ? '\n\n### Built-in Helper Modules\n\n' +
-      'Several helper modules are pre-loaded in the evalJsCode VM under the path prefix `LLMAgent/builtin/`. ' +
+      'Several helper modules are pre-loaded in the evalJsCode VM under the path prefix `LLMAgent/editor-assistant/builtin/`. ' +
       'Each module exports:\n' +
       '- **`description`** — a detailed string documenting every function signature and usage.\n' +
       '- **Named functions** — the actual helper functions you can call.\n\n' +
@@ -36,12 +36,12 @@ export const builtinSummariesText: string = builtinSummaries.length > 0
       'NEVER guess or assume function names — always read `.description` first.\n\n' +
       'Step 1 — Read description (first-time only):\n' +
       '```\nasync function execute() {\n' +
-      '    const sv = await import(\'LLMAgent/builtin/scene-view.mjs\');\n' +
+      '    const sv = await import(\'LLMAgent/editor-assistant/builtin/scene-view.mjs\');\n' +
       '    return sv.description;\n' +
       '}\n```\n\n' +
       'Step 2 — Call functions after you know the signatures:\n' +
       '```\nasync function execute() {\n' +
-      '    const sv = await import(\'LLMAgent/builtin/scene-view.mjs\');\n' +
+      '    const sv = await import(\'LLMAgent/editor-assistant/builtin/scene-view.mjs\');\n' +
       '    return sv.focusSceneViewOn(\'Main Camera\');\n' +
       '}\n```\n\n' +
       'Available modules:\n\n' +

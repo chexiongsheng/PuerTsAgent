@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// src/builtin/unity-log.mts
+// src/editor-assistant/builtin/unity-log.mts
 var summary = `**unity-log** \u2014 Unity console log access (retrieve and summarize recent logs). Read \`.description\` to see available functions and their signatures.`;
 var description = `
 - **\`getUnityLogs(count?, logType?)\`** \u2014 Get recent Unity console logs.

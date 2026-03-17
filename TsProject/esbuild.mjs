@@ -195,8 +195,8 @@ console.log('[esbuild] Bundle built successfully → ../PuertsAgent/Resources/LL
 import { readdirSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 
-const builtinSrcDir = 'src/builtin';
-const builtinOutDir = '../PuertsAgent/Resources/LLMAgent/builtin';
+const builtinSrcDir = 'src/editor-assistant/builtin';
+const builtinOutDir = '../PuertsAgent/Resources/LLMAgent/editor-assistant/builtin';
 
 // Find all .mts files in src/builtin/ (excluding .d.ts)
 const builtinFiles = existsSync(builtinSrcDir)

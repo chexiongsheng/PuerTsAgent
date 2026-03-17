@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// src/builtin/type-reflection.mts
+// src/editor-assistant/builtin/type-reflection.mts
 var summary = `**type-reflection** \u2014 C# type introspection via reflection (list namespaces, types, and type details). Read \`.description\` to see available functions and their signatures.`;
 var description = `
 - **\`listNamespaces()\`** \u2014 List all C# namespaces available across all loaded assemblies.
