@@ -11,7 +11,8 @@
     "forceConsistentCasingInFileNames": true,
     "declaration": false,
     "sourceMap": false,
-    "noEmit": true
+    "noEmit": true,
+    "typeRoots": ["../Assets/Gen/Typing", "../puerts/unity/upms/core/Typing"]
   },
   "include": ["src/**/*.mts", "src/**/*.d.ts", "../Assets/Gen/Typing/csharp/index.d.ts"],
   "exclude": ["node_modules"]

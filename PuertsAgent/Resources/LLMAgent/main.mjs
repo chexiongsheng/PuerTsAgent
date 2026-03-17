@@ -36759,8 +36759,8 @@ function mapShellEnvironment(environment) {
   };
 }
 __name(mapShellEnvironment, "mapShellEnvironment");
-function mapShellSkills(skills) {
-  return skills == null ? void 0 : skills.map(
+function mapShellSkills(skills2) {
+  return skills2 == null ? void 0 : skills2.map(
     (skill) => skill.type === "skillReference" ? {
       type: "skill_reference",
       skill_id: skill.skillId,
@@ -39037,6 +39037,138 @@ ${code}`);
 }
 __name(createEvalTools, "createEvalTools");
 
+// src/resource-root.mts
+var resourceRoot = null;
+function setResourceRoot(root) {
+  resourceRoot = root.endsWith("/") ? root.slice(0, -1) : root;
+  console.log(`[ResourceRoot] Set to: ${resourceRoot}`);
+}
+__name(setResourceRoot, "setResourceRoot");
+function getResourceRoot() {
+  return resourceRoot;
+}
+__name(getResourceRoot, "getResourceRoot");
+
+// src/tools/skill-tool.mts
+var skills = /* @__PURE__ */ new Map();
+function listSkills() {
+  return Array.from(skills.values());
+}
+__name(listSkills, "listSkills");
+function parseSkillMarkdown(text2, fileName) {
+  if (!text2 || !text2.trimStart().startsWith("---")) {
+    console.warn(`[Skill] '${fileName}' has no YAML front-matter, skipping.`);
+    return null;
+  }
+  const firstDelim = text2.indexOf("---");
+  const secondDelim = text2.indexOf("---", firstDelim + 3);
+  if (secondDelim < 0) {
+    console.warn(`[Skill] '${fileName}' has unclosed front-matter, skipping.`);
+    return null;
+  }
+  const frontMatter = text2.substring(firstDelim + 3, secondDelim).trim();
+  const body = text2.substring(secondDelim + 3).replace(/^\r?\n/, "");
+  let name21;
+  let description;
+  for (const line of frontMatter.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("name:")) {
+      name21 = trimmed.substring(5).trim().replace(/^["']|["']$/g, "");
+    } else if (trimmed.startsWith("description:")) {
+      description = trimmed.substring(12).trim().replace(/^["']|["']$/g, "");
+    }
+  }
+  if (!name21) {
+    console.warn(`[Skill] '${fileName}' has no 'name' in front-matter, skipping.`);
+    return null;
+  }
+  return { name: name21, description: description ?? "", content: body };
+}
+__name(parseSkillMarkdown, "parseSkillMarkdown");
+function initSkills() {
+  skills.clear();
+  const root = getResourceRoot();
+  if (!root) {
+    console.warn("[Skill] Resource root not set, skipping skill loading.");
+    return;
+  }
+  const skillsPath = `${root}/skills`;
+  const assets = CS.UnityEngine.Resources.LoadAll(skillsPath, puer.$typeof(CS.UnityEngine.TextAsset));
+  if (!assets || assets.Length === 0) {
+    console.log(`[Skill] No skill assets found at Resources/${skillsPath}/`);
+    return;
+  }
+  for (let i2 = 0; i2 < assets.Length; i2++) {
+    const asset = assets.get_Item(i2);
+    try {
+      const text2 = asset.text;
+      const skill = parseSkillMarkdown(text2, asset.name);
+      if (skill) {
+        skills.set(skill.name, skill);
+        console.log(`[Skill] Registered skill: ${skill.name}`);
+      }
+    } catch (e2) {
+      console.warn(`[Skill] Failed to parse '${asset.name}': ${e2.message || e2}`);
+    }
+  }
+  console.log(`[Skill] Loaded ${skills.size} skill(s) from Resources/${skillsPath}/`);
+}
+__name(initSkills, "initSkills");
+function buildSkillListMarkdown() {
+  const list = listSkills();
+  if (list.length === 0) {
+    return "";
+  }
+  return list.map((s2) => `- **${s2.name}**: ${s2.description}`).join("\n");
+}
+__name(buildSkillListMarkdown, "buildSkillListMarkdown");
+function createSkillTools() {
+  const list = listSkills();
+  if (list.length === 0) {
+    return {};
+  }
+  const examples = list.slice(0, 3).map((s2) => `'${s2.name}'`).join(", ");
+  const hint = examples ? ` (e.g. ${examples})` : "";
+  const description = [
+    "Load a specialized skill that provides domain-specific instructions and workflows.",
+    "",
+    "**IMPORTANT**: You MUST call this tool BEFORE performing any task that involves a domain listed below. Do NOT rely on your own knowledge \u2014 always load the skill first to get the authoritative and project-specific rules.",
+    "",
+    "## Available Skills",
+    buildSkillListMarkdown()
+  ].join("\n");
+  return {
+    loadSkill: tool({
+      description,
+      inputSchema: external_exports.object({
+        name: external_exports.string().describe(`The name of the skill to load${hint}`)
+      }),
+      execute: /* @__PURE__ */ __name(async ({ name: name21 }) => {
+        const skill = skills.get(name21);
+        if (!skill) {
+          const available = listSkills().map((s2) => s2.name).join(", ");
+          return {
+            success: false,
+            error: `Skill "${name21}" not found. Available skills: ${available || "none"}`
+          };
+        }
+        return {
+          success: true,
+          result: [
+            `<skill_content name="${skill.name}">`,
+            `# Skill: ${skill.name}`,
+            "",
+            skill.content.trim(),
+            "",
+            "</skill_content>"
+          ].join("\n")
+        };
+      }, "execute")
+    })
+  };
+}
+__name(createSkillTools, "createSkillTools");
+
 // src/agent/prompt.mts
 var SYSTEM_PROMPT = `You are a helpful AI assistant running inside Unity via PuerTS (a TypeScript/JavaScript runtime for Unity). You can help with game development, scripting, and general questions. Be concise and practical.
 
@@ -39052,109 +39184,13 @@ The placeholder prefix is unique per session:
   Only retrieve it when you genuinely need the exact base64 data \u2014 in most cases,
   take a new screenshot via \`captureScreenshot\` instead.
 
-## PuerTS: JS \u2194 C# Interop Rules
+## Skills (IMPORTANT)
 
-You are running in a PuerTS environment. Below are the rules for interacting between JavaScript/TypeScript and C#.
-
-### JS Calling C#
-
-1. **Access C# classes**: Use the global \`CS\` object with the full namespace path.
-   \`\`\`js
-   const Vector3 = CS.UnityEngine.Vector3;
-   const go = new CS.UnityEngine.GameObject("myObj");
-   \`\`\`
-
-2. **Call methods & access properties**: Same syntax as C#.
-   \`\`\`js
-   CS.UnityEngine.Debug.Log("Hello World");
-   const rect = new CS.UnityEngine.Rect(0, 0, 2, 2);
-   console.log(rect.Contains(CS.UnityEngine.Vector2.one)); // True
-   rect.width = 0.1;
-   \`\`\`
-
-3. **out / ref parameters**: Use \`puer.$ref()\` to create a ref container, \`puer.$unref()\` to read the value.
-   \`\`\`js
-   let p1 = puer.$ref();       // for out param
-   let p2 = puer.$ref(10);     // for ref param with initial value
-   let ret = CS.Example.InOutArgFunc(100, p1, p2);
-   console.log(puer.$unref(p1), puer.$unref(p2));
-   \`\`\`
-
-4. **Generics**: Use \`puer.$generic()\` to construct generic types. TypeScript generics are compile-time only; runtime requires this helper.
-   \`\`\`js
-   let List = puer.$generic(CS.System.Collections.Generic.List$1, CS.System.Int32);
-   let lst = new List();
-   lst.Add(1);
-   \`\`\`
-
-5. **typeof**: Use \`puer.$typeof()\` instead of C#'s \`typeof\` keyword.
-   \`\`\`js
-   go.AddComponent(puer.$typeof(CS.UnityEngine.ParticleSystem));
-   \`\`\`
-
-6. **Array & Indexer access (C# \`[]\` operator)**: C#'s \`[]\` operator does **NOT** map to JS \`[]\`. You must use \`get_Item(index)\` / \`set_Item(index, value)\` methods instead. This applies to C# arrays, Lists, Dictionaries, and any type with an indexer.
-   \`\`\`js
-   // Create a C# array
-   let arr = CS.System.Array.CreateInstance(puer.$typeof(CS.System.Int32), 3);
-   arr.set_Item(0, 42);       // arr[0] = 42 in C#
-   let val = arr.get_Item(0); // val = arr[0] in C#
-
-   // Same for List<T>, Dictionary<K,V>, etc.
-   let List = puer.$generic(CS.System.Collections.Generic.List$1, CS.System.Int32);
-   let lst = new List();
-   lst.Add(10);
-   let first = lst.get_Item(0); // first = lst[0] in C#
-   lst.set_Item(0, 20);         // lst[0] = 20 in C#
-   \`\`\`
-
-7. **Operator overloading**: JS does not support operator overloading; use \`op_Xxx\` methods instead.
-   \`\`\`js
-   let ret = CS.UnityEngine.Vector3.op_Multiply(CS.UnityEngine.Vector3.up, 1600);
-   // (0.0, 1600.0, 0.0)
-   \`\`\`
-
-8. **Async / Task**: Wrap C# Task with \`puer.$promise()\` to await in JS.
-   \`\`\`js
-   let task = obj.GetFileLengthAsync("path");
-   let result = await puer.$promise(task);
-   \`\`\`
-
-9. **console.log**: In PuerTS, \`console.log\` is intercepted and internally calls \`UnityEngine.Debug.Log\`.
-
-### C# Calling JS
-
-1. **Via Delegate**: PuerTS can convert a JS function to a C# delegate (Action / Func / custom delegate). The JS side passes a function, C# stores it as a delegate and invokes it.
-   \`\`\`js
-   // JS side \u2014 pass a function where C# expects a delegate
-   obj.AddEventCallback1(str => console.log(str));
-   obj.Trigger(); // C# fires the delegate, JS function runs
-   \`\`\`
-
-2. **Passing parameters from C# to JS**: Convert JS function to a parameterized delegate. Type conversion follows the same rules as C# return values to JS.
-   \`\`\`csharp
-   // C# side
-   System.Action<int> LogInt = env.Eval<System.Action<int>>("(function(a){ console.log(a); })");
-   LogInt(3); // prints 3
-   \`\`\`
-
-3. **Getting return values from JS**: Use \`Func<>\` delegate instead of \`Action<>\`.
-   \`\`\`csharp
-   // C# side
-   System.Func<int, int> Add3 = env.Eval<System.Func<int, int>>("(function(a){ return 3 + a; })");
-   Console.WriteLine(Add3(1)); // 4
-   \`\`\`
-
-### Important Notes
-- The \`CS\` global object is always available in the PuerTS JS environment for accessing any C# type.
-- The \`puer\` global object provides PuerTS helper APIs: \`$ref\`, \`$unref\`, \`$generic\`, \`$typeof\`, \`$promise\`.
+If the \`loadSkill\` tool is available, you **MUST** call it to load the relevant skill **before** performing any task that falls within that skill's domain. For example, if a task involves calling C# APIs from JS via PuerTS, you must first load the corresponding skill to get the correct interop rules. **Never assume you know the correct approach \u2014 always load the skill first.**
 
 ## evalJsCode Runtime Environment
 
 The evalJsCode tool runs in a **pure V8 engine** \u2014 there is NO \`window\`, \`document\`, \`DOM\`, or any browser/Node.js API. However, \`setTimeout\`, \`setInterval\`, \`clearTimeout\`, and \`clearInterval\` are available (provided by PuerTS). To persist state across calls, use \`globalThis.myVar = ...\` or top-level \`var\` declarations.
-
-## Unity Edit Mode Detection
-
-Before using runtime-only APIs (e.g. \`Destroy\`, \`MeshFilter.mesh\`, coroutines), first check \`CS.UnityEngine.Application.isPlaying\` via \`evalJsCode\` and use edit-mode-safe alternatives when needed (e.g. \`DestroyImmediate\`, \`sharedMesh\`).
 `;
 function buildSystemPrompt(imagePrefix) {
   return SYSTEM_PROMPT.replace(/\{IMAGE_PREFIX\}/g, imagePrefix);
@@ -39541,7 +39577,8 @@ function createToolSet() {
   return {
     ...createScreenshotTools(),
     ...createEvalTools(),
-    ...createRetrieveImageTool()
+    ...createRetrieveImageTool(),
+    ...createSkillTools()
   };
 }
 __name(createToolSet, "createToolSet");
@@ -39876,6 +39913,11 @@ function onIsConfigured() {
   return getIsConfigured();
 }
 __name(onIsConfigured, "onIsConfigured");
+function onSetResourceRoot(root) {
+  setResourceRoot(root);
+  initSkills();
+}
+__name(onSetResourceRoot, "onSetResourceRoot");
 export {
   configureAgent,
   onAbortGeneration,
@@ -39884,7 +39926,8 @@ export {
   onGetHistoryLength,
   onIsConfigured,
   onMessageReceived,
-  onMessageSync
+  onMessageSync,
+  onSetResourceRoot
 };
 /*! Bundled license information:
 

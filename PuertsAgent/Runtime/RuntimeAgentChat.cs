@@ -184,13 +184,13 @@ namespace LLMAgent
                 // Send on button click or Enter key
                 if (canSend && (sendClicked || (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Return)))
                 {
-                    SendMessage(inputText);
+                    SendUserMessage(inputText);
                     inputText = "";
                 }
             }
         }
 
-        private void SendMessage(string message)
+        private void SendUserMessage(string message)
         {
             chatHistory.Add(new ChatMessage { role = "user", content = message });
             isWaiting = true;

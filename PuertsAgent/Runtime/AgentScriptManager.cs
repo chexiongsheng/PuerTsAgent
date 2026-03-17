@@ -29,6 +29,7 @@ namespace LLMAgent
         private Action onClearHistory;
         private Func<int> onGetHistoryLength;
         private Func<bool> onIsConfigured;
+        private Action<string> onSetResourceRoot;
 
         private const string EntryModule = "LLMAgent/main.mjs";
 
@@ -83,6 +84,7 @@ namespace LLMAgent
                 onClearHistory = moduleExports.Get<Action>("onClearHistory");
                 onGetHistoryLength = moduleExports.Get<Func<int>>("onGetHistoryLength");
                 onIsConfigured = moduleExports.Get<Func<bool>>("onIsConfigured");
+                onSetResourceRoot = moduleExports.Get<Action<string>>("onSetResourceRoot");
 
                 if (onMessageReceived == null)
                 {
@@ -93,6 +95,9 @@ namespace LLMAgent
 
                 isInitialized = true;
                 lastError = null;
+
+                // Set resource root so TS side can auto-discover skills, etc.
+                onSetResourceRoot?.Invoke("LLMAgent/editor-assistant");
 
                 // Start ticking ScriptEnv
                 StartTicking();
@@ -354,6 +359,7 @@ namespace LLMAgent
             onClearHistory = null;
             onGetHistoryLength = null;
             onIsConfigured = null;
+            onSetResourceRoot = null;
             isInitialized = false;
 
             if (scriptEnv != null)

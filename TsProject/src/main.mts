@@ -17,6 +17,8 @@ import {
     getHistoryLength,
     getIsConfigured,
 } from './agent/agent-core.mjs';
+import { setResourceRoot } from './resource-root.mjs';
+import { initSkills } from './tools/skill-tool.mjs';
 
 // Start capturing Unity logs for the agent's log tool
 CS.LLMAgent.UnityLogBridge.StartListening();
@@ -149,4 +151,14 @@ export function onGetHistoryLength(): number {
  */
 export function onIsConfigured(): boolean {
     return getIsConfigured();
+}
+
+/**
+ * Set the unified resource root and initialize resource-dependent modules.
+ * C# calls this once at startup with the Resources path prefix.
+ * @param root - Unity Resources path prefix, e.g. "LLMAgent/editor-assistant"
+ */
+export function onSetResourceRoot(root: string): void {
+    setResourceRoot(root);
+    initSkills();
 }

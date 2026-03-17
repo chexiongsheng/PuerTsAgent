@@ -7,6 +7,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 
 import { createScreenshotTools } from '../tools/screenshot-tool.mjs';
 import { createEvalTools } from '../tools/eval-tool.mjs';
+import { createSkillTools } from '../tools/skill-tool.mjs';
 import { buildSystemPrompt } from './prompt.mjs';
 import { imageStore, stripOldUserImages, createRetrieveImageTool } from './image-store.mjs';
 import {
@@ -138,6 +139,7 @@ function createToolSet() {
         ...createScreenshotTools(),
         ...createEvalTools(),
         ...createRetrieveImageTool(),
+        ...createSkillTools(),
     };
 }
 

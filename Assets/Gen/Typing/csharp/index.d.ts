@@ -331,6 +331,22 @@
             public static GetTypeFromCLSID ($clsid: System.Guid, $server: string, $throwOnError: boolean) : System.Type
             public static GetTypeFromProgID ($progID: string, $server: string, $throwOnError: boolean) : System.Type
         }
+        class ReadOnlySpan$1<T> extends System.ValueType
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        class Span$1<T> extends System.ValueType
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        class Enum extends System.ValueType implements System.IFormattable, System.IComparable, System.IConvertible
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        class Byte extends System.ValueType implements System.IFormattable, System.ISpanFormattable, System.IComparable, System.IComparable$1<number>, System.IConvertible, System.IEquatable$1<number>
+        {
+            protected [__keep_incompatibility]: never;
+        }
         class Int64 extends System.ValueType implements System.IFormattable, System.ISpanFormattable, System.IComparable, System.IComparable$1<bigint>, System.IConvertible, System.IEquatable$1<bigint>
         {
             protected [__keep_incompatibility]: never;
@@ -382,10 +398,6 @@
         { 
         () : TResult; 
         Invoke?: () => TResult;
-        }
-        class Enum extends System.ValueType implements System.IFormattable, System.IComparable, System.IConvertible
-        {
-            protected [__keep_incompatibility]: never;
         }
         class Attribute extends System.Object implements System.Runtime.InteropServices._Attribute
         {
@@ -470,6 +482,11 @@
         interface ICollection$1<T> extends System.Collections.Generic.IEnumerable$1<T>, System.Collections.IEnumerable
         {
         }
+        class List$1<T> extends System.Object implements System.Collections.Generic.IReadOnlyList$1<T>, System.Collections.ICollection, System.Collections.Generic.IEnumerable$1<T>, System.Collections.IEnumerable, System.Collections.Generic.IList$1<T>, System.Collections.Generic.IReadOnlyCollection$1<T>, System.Collections.IList, System.Collections.Generic.ICollection$1<T>
+        {
+            protected [__keep_incompatibility]: never;
+            public [Symbol.iterator]() : IterableIterator<T>
+        }
         interface IComparer$1<T>
         {
         }
@@ -490,10 +507,10 @@
         interface IList extends System.Collections.ICollection, System.Collections.IEnumerable
         {
         }
-        interface IComparer
+        interface IEnumerator
         {
         }
-        interface IEnumerator
+        interface IComparer
         {
         }
     }
@@ -727,6 +744,327 @@
             public constructor ($x: number, $y: number, $z: number)
             public constructor ($x: number, $y: number)
         }
+        /** The Resources class allows you to find and access Objects including assets.
+        */
+        class Resources extends System.Object
+        {
+            protected [__keep_incompatibility]: never;
+            /** Returns a list of all objects of Type type.
+            */
+            public static FindObjectsOfTypeAll ($type: System.Type) : System.Array$1<UnityEngine.Object>
+            /** Loads an asset stored at path in a Resources folder using an optional systemTypeInstance filter.
+            * @param $path Path to the target resource to load.
+            * @param $systemTypeInstance Type filter for objects returned.
+            * @returns The requested asset returned as an Object. 
+            */
+            public static Load ($path: string) : UnityEngine.Object
+            /** Loads an asset stored at path in a Resources folder using an optional systemTypeInstance filter.
+            * @param $path Path to the target resource to load.
+            * @param $systemTypeInstance Type filter for objects returned.
+            * @returns The requested asset returned as an Object. 
+            */
+            public static Load ($path: string, $systemTypeInstance: System.Type) : UnityEngine.Object
+            /** Asynchronously loads an asset stored at path in a Resources folder.
+            * @param $path Pathname of the target folder. When using the empty string (i.e., ""), the function will load the entire contents of the Resources folder.
+            */
+            public static LoadAsync ($path: string) : UnityEngine.ResourceRequest
+            /** Asynchronously loads an asset stored at path in a Resources folder.
+            * @param $path Pathname of the target folder. When using the empty string (i.e., ""), the function will load the entire contents of the Resources folder.
+            * @param $systemTypeInstance Type filter for objects returned.
+            */
+            public static LoadAsync ($path: string, $type: System.Type) : UnityEngine.ResourceRequest
+            /** Loads all assets in a folder or file at path in a Resources folder.
+            * @param $path Pathname of the target folder. When using the empty string (i.e., ""), the function will load the entire contents of the Resources folder.
+            * @param $systemTypeInstance Type filter for objects returned.
+            */
+            public static LoadAll ($path: string, $systemTypeInstance: System.Type) : System.Array$1<UnityEngine.Object>
+            /** Loads all assets in a folder or file at path in a Resources folder.
+            * @param $path Pathname of the target folder. When using the empty string (i.e., ""), the function will load the entire contents of the Resources folder.
+            */
+            public static LoadAll ($path: string) : System.Array$1<UnityEngine.Object>
+            public static GetBuiltinResource ($type: System.Type, $path: string) : UnityEngine.Object
+            /** Unloads assetToUnload from memory.
+            */
+            public static UnloadAsset ($assetToUnload: UnityEngine.Object) : void
+            /** Unloads assets that are not used.
+            * @returns Object on which you can yield to wait until the operation completes. 
+            */
+            public static UnloadUnusedAssets () : UnityEngine.AsyncOperation
+            /** Translates an instance ID to an object reference.
+            * @param $instanceID Instance ID of an Object.
+            * @returns Resolved reference or null if the instance ID didn't match anything. 
+            */
+            public static InstanceIDToObject ($instanceID: number) : UnityEngine.Object
+            public static InstanceIDToObjectList ($instanceIDs: Unity.Collections.NativeArray$1<number>, $objects: System.Collections.Generic.List$1<UnityEngine.Object>) : void
+            /** Returns true if the given instance ID corresponds to a valid Object in memory. The Object could have been deleted or not loaded into memory yet.
+            * @param $instanceID ID of an Object.
+            */
+            public static InstanceIDIsValid ($instanceId: number) : boolean
+            public static InstanceIDsToValidArray ($instanceIDs: Unity.Collections.NativeArray$1<number>, $validArray: Unity.Collections.NativeArray$1<boolean>) : void
+            public constructor ()
+        }
+        /** Base class for all objects Unity can reference.
+        */
+        class Object extends System.Object
+        {
+            protected [__keep_incompatibility]: never;
+            /** The name of the object.
+            */
+            public get name(): string;
+            public set name(value: string);
+            /** Should the object be hidden, saved with the Scene or modifiable by the user?
+            */
+            public get hideFlags(): UnityEngine.HideFlags;
+            public set hideFlags(value: UnityEngine.HideFlags);
+            /** Gets  the instance ID of the object.
+            * @returns Returns the instance ID of the object. 
+            */
+            public GetInstanceID () : number
+            public static op_Implicit ($exists: UnityEngine.Object) : boolean
+            public static InstantiateAsync ($original: UnityEngine.Object) : UnityEngine.AsyncInstantiateOperation$1<UnityEngine.Object>
+            public static InstantiateAsync ($original: UnityEngine.Object, $parent: UnityEngine.Transform) : UnityEngine.AsyncInstantiateOperation$1<UnityEngine.Object>
+            public static InstantiateAsync ($original: UnityEngine.Object, $position: UnityEngine.Vector3, $rotation: UnityEngine.Quaternion) : UnityEngine.AsyncInstantiateOperation$1<UnityEngine.Object>
+            public static InstantiateAsync ($original: UnityEngine.Object, $parent: UnityEngine.Transform, $position: UnityEngine.Vector3, $rotation: UnityEngine.Quaternion) : UnityEngine.AsyncInstantiateOperation$1<UnityEngine.Object>
+            public static InstantiateAsync ($original: UnityEngine.Object, $count: number) : UnityEngine.AsyncInstantiateOperation$1<UnityEngine.Object>
+            public static InstantiateAsync ($original: UnityEngine.Object, $count: number, $parent: UnityEngine.Transform) : UnityEngine.AsyncInstantiateOperation$1<UnityEngine.Object>
+            public static InstantiateAsync ($original: UnityEngine.Object, $count: number, $position: UnityEngine.Vector3, $rotation: UnityEngine.Quaternion) : UnityEngine.AsyncInstantiateOperation$1<UnityEngine.Object>
+            public static InstantiateAsync ($original: UnityEngine.Object, $count: number, $parent: UnityEngine.Transform, $position: UnityEngine.Vector3, $rotation: UnityEngine.Quaternion) : UnityEngine.AsyncInstantiateOperation$1<UnityEngine.Object>
+            public static InstantiateAsync ($original: UnityEngine.Object, $parameters: UnityEngine.InstantiateParameters) : UnityEngine.AsyncInstantiateOperation$1<UnityEngine.Object>
+            public static InstantiateAsync ($original: UnityEngine.Object, $count: number, $parameters: UnityEngine.InstantiateParameters) : UnityEngine.AsyncInstantiateOperation$1<UnityEngine.Object>
+            public static InstantiateAsync ($original: UnityEngine.Object, $position: UnityEngine.Vector3, $rotation: UnityEngine.Quaternion, $parameters: UnityEngine.InstantiateParameters) : UnityEngine.AsyncInstantiateOperation$1<UnityEngine.Object>
+            public static InstantiateAsync ($original: UnityEngine.Object, $count: number, $position: UnityEngine.Vector3, $rotation: UnityEngine.Quaternion, $parameters: UnityEngine.InstantiateParameters) : UnityEngine.AsyncInstantiateOperation$1<UnityEngine.Object>
+            /** Clones the object original and returns the clone.
+            * @param $original An existing object that you want to make a copy of.
+            * @param $position Position for the new object.
+            * @param $rotation Orientation of the new object.
+            * @param $parent Parent that will be assigned to the new object.
+            * @param $instantiateInWorldSpace When you assign a parent Object, pass true to position the new object directly in world space. Pass false to set the Object’s position relative to its new parent.
+            * @param $parameters A struct containing all the parameters.
+            * @returns The instantiated clone. 
+            */
+            public static Instantiate ($original: UnityEngine.Object, $position: UnityEngine.Vector3, $rotation: UnityEngine.Quaternion) : UnityEngine.Object
+            /** Clones the object original and returns the clone.
+            * @param $original An existing object that you want to make a copy of.
+            * @param $position Position for the new object.
+            * @param $rotation Orientation of the new object.
+            * @param $parent Parent that will be assigned to the new object.
+            * @param $instantiateInWorldSpace When you assign a parent Object, pass true to position the new object directly in world space. Pass false to set the Object’s position relative to its new parent.
+            * @param $parameters A struct containing all the parameters.
+            * @returns The instantiated clone. 
+            */
+            public static Instantiate ($original: UnityEngine.Object, $position: UnityEngine.Vector3, $rotation: UnityEngine.Quaternion, $parent: UnityEngine.Transform) : UnityEngine.Object
+            /** Clones the object original and returns the clone.
+            * @param $original An existing object that you want to make a copy of.
+            * @param $position Position for the new object.
+            * @param $rotation Orientation of the new object.
+            * @param $parent Parent that will be assigned to the new object.
+            * @param $instantiateInWorldSpace When you assign a parent Object, pass true to position the new object directly in world space. Pass false to set the Object’s position relative to its new parent.
+            * @param $parameters A struct containing all the parameters.
+            * @returns The instantiated clone. 
+            */
+            public static Instantiate ($original: UnityEngine.Object) : UnityEngine.Object
+            /** Clones the object original and returns the clone.
+            * @param $original An existing object that you want to make a copy of.
+            * @param $position Position for the new object.
+            * @param $rotation Orientation of the new object.
+            * @param $parent Parent that will be assigned to the new object.
+            * @param $instantiateInWorldSpace When you assign a parent Object, pass true to position the new object directly in world space. Pass false to set the Object’s position relative to its new parent.
+            * @param $parameters A struct containing all the parameters.
+            * @returns The instantiated clone. 
+            */
+            public static Instantiate ($original: UnityEngine.Object, $scene: UnityEngine.SceneManagement.Scene) : UnityEngine.Object
+            public static Instantiate ($original: UnityEngine.Object, $parameters: UnityEngine.InstantiateParameters) : UnityEngine.Object
+            public static Instantiate ($original: UnityEngine.Object, $position: UnityEngine.Vector3, $rotation: UnityEngine.Quaternion, $parameters: UnityEngine.InstantiateParameters) : UnityEngine.Object
+            /** Clones the object original and returns the clone.
+            * @param $original An existing object that you want to make a copy of.
+            * @param $position Position for the new object.
+            * @param $rotation Orientation of the new object.
+            * @param $parent Parent that will be assigned to the new object.
+            * @param $instantiateInWorldSpace When you assign a parent Object, pass true to position the new object directly in world space. Pass false to set the Object’s position relative to its new parent.
+            * @param $parameters A struct containing all the parameters.
+            * @returns The instantiated clone. 
+            */
+            public static Instantiate ($original: UnityEngine.Object, $parent: UnityEngine.Transform) : UnityEngine.Object
+            /** Clones the object original and returns the clone.
+            * @param $original An existing object that you want to make a copy of.
+            * @param $position Position for the new object.
+            * @param $rotation Orientation of the new object.
+            * @param $parent Parent that will be assigned to the new object.
+            * @param $instantiateInWorldSpace When you assign a parent Object, pass true to position the new object directly in world space. Pass false to set the Object’s position relative to its new parent.
+            * @param $parameters A struct containing all the parameters.
+            * @returns The instantiated clone. 
+            */
+            public static Instantiate ($original: UnityEngine.Object, $parent: UnityEngine.Transform, $instantiateInWorldSpace: boolean) : UnityEngine.Object
+            public static Instantiate ($original: UnityEngine.Object, $parent: UnityEngine.Transform, $worldPositionStays: boolean) : UnityEngine.Object
+            /** Removes a GameObject, component or asset.
+            * @param $obj The object to destroy.
+            * @param $t The optional amount of time to delay before destroying the object.
+            */
+            public static Destroy ($obj: UnityEngine.Object, $t: number) : void
+            /** Removes a GameObject, component or asset.
+            * @param $obj The object to destroy.
+            * @param $t The optional amount of time to delay before destroying the object.
+            */
+            public static Destroy ($obj: UnityEngine.Object) : void
+            /** Destroys the object obj immediately. You are strongly recommended to use Destroy instead.
+            * @param $obj Object to be destroyed.
+            * @param $allowDestroyingAssets Set to true to allow assets to be destroyed.
+            */
+            public static DestroyImmediate ($obj: UnityEngine.Object, $allowDestroyingAssets: boolean) : void
+            /** Destroys the object obj immediately. You are strongly recommended to use Destroy instead.
+            * @param $obj Object to be destroyed.
+            * @param $allowDestroyingAssets Set to true to allow assets to be destroyed.
+            */
+            public static DestroyImmediate ($obj: UnityEngine.Object) : void
+            /** Gets a list of all loaded objects of Type type.
+            * @param $type The type of object to find.
+            * @param $includeInactive If true, components attached to inactive GameObjects are also included.
+            * @returns The array of objects found matching the type specified. 
+            */
+            public static FindObjectsOfType ($type: System.Type) : System.Array$1<UnityEngine.Object>
+            /** Gets a list of all loaded objects of Type type.
+            * @param $type The type of object to find.
+            * @param $includeInactive If true, components attached to inactive GameObjects are also included.
+            * @returns The array of objects found matching the type specified. 
+            */
+            public static FindObjectsOfType ($type: System.Type, $includeInactive: boolean) : System.Array$1<UnityEngine.Object>
+            /** Retrieves a list of all loaded objects of Type type.
+            * @param $type The type of object to find.
+            * @param $findObjectsInactive Whether to include components attached to inactive GameObjects. If you don't specify this parameter, this function doesn't include inactive objects in the results.
+            * @param $sortMode Whether and how to sort the returned array. Not sorting the array makes this function run significantly faster.
+            * @returns The array of objects found matching the type specified. 
+            */
+            public static FindObjectsByType ($type: System.Type, $sortMode: UnityEngine.FindObjectsSortMode) : System.Array$1<UnityEngine.Object>
+            /** Retrieves a list of all loaded objects of Type type.
+            * @param $type The type of object to find.
+            * @param $findObjectsInactive Whether to include components attached to inactive GameObjects. If you don't specify this parameter, this function doesn't include inactive objects in the results.
+            * @param $sortMode Whether and how to sort the returned array. Not sorting the array makes this function run significantly faster.
+            * @returns The array of objects found matching the type specified. 
+            */
+            public static FindObjectsByType ($type: System.Type, $findObjectsInactive: UnityEngine.FindObjectsInactive, $sortMode: UnityEngine.FindObjectsSortMode) : System.Array$1<UnityEngine.Object>
+            /** Do not destroy the target Object when loading a new Scene.
+            * @param $target An Object not destroyed on Scene change.
+            */
+            public static DontDestroyOnLoad ($target: UnityEngine.Object) : void
+            /** Returns the first active loaded object of Type type.
+            * @param $type The type of object to find.
+            * @returns Object The first active loaded object that matches the specified type. It returns null if no Object matches the type. 
+            */
+            public static FindObjectOfType ($type: System.Type) : UnityEngine.Object
+            /** Retrieves the first active loaded object of Type type.
+            * @param $type The type of object to find.
+            * @param $findObjectsInactive Whether to include components attached to inactive GameObjects. If you don't specify this parameter, this function doesn't include inactive objects in the results.
+            * @returns Returns the first active loaded object that matches the specified type. If no object matches the specified type, returns null. 
+            */
+            public static FindFirstObjectByType ($type: System.Type) : UnityEngine.Object
+            /** Retrieves any active loaded object of Type type.
+            * @param $type The type of object to find.
+            * @param $findObjectsInactive Whether to include components attached to inactive GameObjects. If you don't specify this parameter, this function doesn't include inactive objects in the results.
+            * @returns Returns an arbitrary active loaded object that matches the specified type. If no object matches the specified type, returns null. 
+            */
+            public static FindAnyObjectByType ($type: System.Type) : UnityEngine.Object
+            /** Returns the first active loaded object of Type type.
+            * @param $type The type of object to find.
+            * @returns Object The first active loaded object that matches the specified type. It returns null if no Object matches the type. 
+            */
+            public static FindObjectOfType ($type: System.Type, $includeInactive: boolean) : UnityEngine.Object
+            /** Retrieves the first active loaded object of Type type.
+            * @param $type The type of object to find.
+            * @param $findObjectsInactive Whether to include components attached to inactive GameObjects. If you don't specify this parameter, this function doesn't include inactive objects in the results.
+            * @returns Returns the first active loaded object that matches the specified type. If no object matches the specified type, returns null. 
+            */
+            public static FindFirstObjectByType ($type: System.Type, $findObjectsInactive: UnityEngine.FindObjectsInactive) : UnityEngine.Object
+            /** Retrieves any active loaded object of Type type.
+            * @param $type The type of object to find.
+            * @param $findObjectsInactive Whether to include components attached to inactive GameObjects. If you don't specify this parameter, this function doesn't include inactive objects in the results.
+            * @returns Returns an arbitrary active loaded object that matches the specified type. If no object matches the specified type, returns null. 
+            */
+            public static FindAnyObjectByType ($type: System.Type, $findObjectsInactive: UnityEngine.FindObjectsInactive) : UnityEngine.Object
+            public static op_Equality ($x: UnityEngine.Object, $y: UnityEngine.Object) : boolean
+            public static op_Inequality ($x: UnityEngine.Object, $y: UnityEngine.Object) : boolean
+            public constructor ()
+        }
+        /** Base class for all yield instructions.
+        */
+        class YieldInstruction extends System.Object
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        /** Asynchronous operation coroutine.
+        */
+        class AsyncOperation extends UnityEngine.YieldInstruction
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        /** Asynchronous load request from the Resources bundle.
+        */
+        class ResourceRequest extends UnityEngine.AsyncOperation
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        /** Base class for custom yield instructions to suspend coroutines.
+        */
+        class CustomYieldInstruction extends System.Object implements System.Collections.IEnumerator
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        class AsyncInstantiateOperation$1<T> extends UnityEngine.CustomYieldInstruction implements System.Collections.IEnumerator
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        /** Base class for everything attached to a GameObject.
+        */
+        class Component extends UnityEngine.Object
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        /** Position, rotation and scale of an object.
+        */
+        class Transform extends UnityEngine.Component implements System.Collections.IEnumerable
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        /** Quaternions are used to represent rotations.
+        */
+        class Quaternion extends System.ValueType implements System.IFormattable, System.IEquatable$1<UnityEngine.Quaternion>
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        /** Parameters for Object.Instantiate and Object.InstantiateAsync.
+        */
+        class InstantiateParameters extends System.ValueType
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        /** Options to specify if and how to sort objects returned by a function.
+        */
+        enum FindObjectsSortMode
+        { None = 0, InstanceID = 1 }
+        /** Options to control whether object find functions return inactive objects.
+        */
+        enum FindObjectsInactive
+        { Exclude = 0, Include = 1 }
+        /** Bit mask that controls object destruction, saving and visibility in inspectors.
+        */
+        enum HideFlags
+        { None = 0, HideInHierarchy = 1, HideInInspector = 2, DontSaveInEditor = 4, NotEditable = 8, DontSaveInBuild = 16, DontUnloadUnusedAsset = 32, DontSave = 52, HideAndDontSave = 61 }
+        /** Represents a raw text or binary file asset.
+        */
+        class TextAsset extends UnityEngine.Object
+        {
+            protected [__keep_incompatibility]: never;
+            /** The raw bytes of the text asset. (Read Only)
+            */
+            public get bytes(): System.Array$1<number>;
+            /** The text contents of the file as a string. (Read Only)
+            */
+            public get text(): string;
+            /** The size of the text asset data in bytes. (Read Only)
+            */
+            public get dataSize(): bigint;
+            public constructor ()
+            public constructor ($text: string)
+        }
     }
     namespace System.Reflection {
         class MemberInfo extends System.Object implements System.Runtime.InteropServices._MemberInfo, System.Reflection.ICustomAttributeProvider
@@ -850,6 +1188,21 @@
         }
         interface _AssemblyName
         {
+        }
+    }
+    namespace Unity.Collections {
+        class NativeArray$1<T> extends System.ValueType implements System.Collections.Generic.IEnumerable$1<T>, System.Collections.IEnumerable, System.IDisposable, System.IEquatable$1<Unity.Collections.NativeArray$1<T>>
+        {
+            protected [__keep_incompatibility]: never;
+            public [Symbol.iterator]() : IterableIterator<T>
+        }
+    }
+    namespace UnityEngine.SceneManagement {
+        /** Run-time data structure for *.unity file.
+        */
+        class Scene extends System.ValueType
+        {
+            protected [__keep_incompatibility]: never;
         }
     }
     namespace System.Collections.ObjectModel {
