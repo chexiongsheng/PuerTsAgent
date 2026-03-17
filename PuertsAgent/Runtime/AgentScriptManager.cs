@@ -23,7 +23,6 @@ namespace LLMAgent
         // TS function delegates
         private Func<string, string, string, string> configureAgent;
         private Action<string, string, string, Action<string, bool>, Action<string>> onMessageReceived;
-        private Action<Action<string, bool>, Action<string>> onContinueGeneration;
         private Action onAbortGeneration;
         private Func<string, string> onMessageSync;
         private Action onClearHistory;
@@ -83,7 +82,6 @@ namespace LLMAgent
                 // Get exported functions from TS module
                 configureAgent = moduleExports.Get<Func<string, string, string, string>>("configureAgent");
                 onMessageReceived = moduleExports.Get<Action<string, string, string, Action<string, bool>, Action<string>>>("onMessageReceived");
-                onContinueGeneration = moduleExports.Get<Action<Action<string, bool>, Action<string>>>("onContinueGeneration");
                 onAbortGeneration = moduleExports.Get<Action>("onAbortGeneration");
                 onMessageSync = moduleExports.Get<Func<string, string>>("onMessageSync");
                 onClearHistory = moduleExports.Get<Action>("onClearHistory");
@@ -249,35 +247,6 @@ namespace LLMAgent
         }
 
         /// <summary>
-        /// Continue generation after the step limit was reached.
-        /// </summary>
-        public void ContinueGenerationAsync(Action<string, bool> onResponse, Action<string> onProgress = null)
-        {
-            if (!isInitialized || onContinueGeneration == null)
-            {
-                onResponse?.Invoke("[AgentScriptManager] Not initialized. Cannot continue generation.", true);
-                return;
-            }
-
-            try
-            {
-                onContinueGeneration((response, isError) =>
-                {
-                    onResponse?.Invoke(response, isError);
-                }, (progressText) =>
-                {
-                    onProgress?.Invoke(progressText);
-                });
-            }
-            catch (Exception ex)
-            {
-                string err = $"[AgentScriptManager] Error continuing generation: {ex.Message}";
-                Debug.LogError(err);
-                onResponse?.Invoke(err, true);
-            }
-        }
-
-        /// <summary>
         /// Abort the current in-flight generation.
         /// Safe to call even when no generation is running.
         /// </summary>
@@ -359,7 +328,6 @@ namespace LLMAgent
 
             configureAgent = null;
             onMessageReceived = null;
-            onContinueGeneration = null;
             onAbortGeneration = null;
             onMessageSync = null;
             onClearHistory = null;

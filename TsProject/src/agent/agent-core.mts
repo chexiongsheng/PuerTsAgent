@@ -30,15 +30,28 @@ let currentAbortController: AbortController | null = null;
 
 /**
  * Maximum number of tool-call steps allowed per generateText invocation.
- * When this limit is reached, the agent pauses and asks the user whether to continue.
+ * When this limit is reached, the agent is forced to produce a text-only
+ * summary via an injected assistant message (à la opencode).
  */
 const MAX_STEPS = 25;
 
 /**
- * Prefix used to signal the C# UI that the response hit the step limit.
- * The UI should detect this prefix and show a "Continue" button.
+ * Injected as a fake assistant message on the last step to force the model
+ * to stop calling tools and produce a text summary instead.
  */
-const STEP_LIMIT_PREFIX = '[STEP_LIMIT_REACHED]';
+const MAX_STEPS_MESSAGE = `CRITICAL - MAXIMUM STEPS REACHED
+
+The maximum number of steps allowed for this task has been reached. Tools are disabled. Respond with text only.
+
+STRICT REQUIREMENTS:
+1. Do NOT make any tool calls
+2. MUST provide a text response summarizing work done so far
+
+Response must include:
+- Statement that maximum steps have been reached
+- Summary of what has been accomplished so far
+- List of any remaining tasks that were not completed
+- Recommendations for what should be done next`;
 
 // Agent configuration interface
 export interface AgentConfig {
@@ -128,7 +141,7 @@ export function configure(config: Partial<AgentConfig>): string {
 
 
 // ============================================================
-// Shared helpers for sendMessage / continueGeneration
+// Shared helpers for sendMessage
 // ============================================================
 
 /**
@@ -201,6 +214,14 @@ function handleStepFinish(onProgress: ((text: string) => void) | undefined, { st
 function handlePrepareStep({ messages, stepNumber, steps }: any): any {
     if (stepNumber === 0) return undefined;
 
+    // ---- Max steps: inject assistant message and remove tools on last step ----
+    // stepNumber is 0-indexed and prepareStep runs at the *start* of each step,
+    // so the maximum stepNumber we ever see is MAX_STEPS-1 (for the last tool step).
+    // We fire on that step to inject the stop message and disable tools; the model
+    // will then produce a pure-text response, and the do-while loop exits naturally
+    // because there are no further tool calls.
+    const isLastStep = stepNumber >= MAX_STEPS - 1;
+
     // ---- Diagnostic: log message identities to check if AI SDK rebuilds them ----
     const lastFew = messages.slice(-3).map((m: any, i: number) => {
         const role = m.role || '?';
@@ -259,6 +280,15 @@ function handlePrepareStep({ messages, stepNumber, steps }: any): any {
 
     const lastMsg = newMessages[newMessages.length - 1];
     if (!lastMsg || lastMsg.role !== 'tool') {
+        // ---- (3) If last step, inject max-steps assistant message and disable tools ----
+        if (isLastStep) {
+            console.log(`[Agent] prepareStep(${stepNumber}): MAX_STEPS reached, injecting stop message and disabling tools.`);
+            newMessages = [...(modified ? newMessages : messages), {
+                role: 'user' as const,
+                content: MAX_STEPS_MESSAGE,
+            }];
+            return { messages: newMessages, tools: {} };
+        }
         return modified ? { messages: newMessages } : undefined;
     }
 
@@ -318,14 +348,24 @@ function handlePrepareStep({ messages, stepNumber, steps }: any): any {
         // 所以截图工具的base64不会被压缩
     }
 
-    return { messages: newMessages };
+    // ---- (3) If last step, inject max-steps assistant message and disable tools ----
+    if (isLastStep) {
+        console.log(`[Agent] prepareStep(${stepNumber}): MAX_STEPS reached, injecting stop message and disabling tools.`);
+        newMessages = [...newMessages, {
+            role: 'user' as const,
+            content: MAX_STEPS_MESSAGE,
+        }];
+        return { messages: newMessages, tools: {} };
+    }
+
+    return modified || imageParts.length > 0 ? { messages: newMessages } : undefined;
 }
 
 
 
 /**
  * Compress history and apply sliding-window trimming.
- * Shared pre-processing for both sendMessage and continueGeneration.
+ * Shared pre-processing for sendMessage.
  */
 async function prepareHistory(): Promise<void> {
     stripOldUserImages(conversationHistory);
@@ -344,12 +384,10 @@ async function prepareHistory(): Promise<void> {
 }
 
 /**
- * Core generation logic shared by sendMessage and continueGeneration.
- * Calls generateText, appends response messages to history, handles
- * step-limit detection and errors.
+ * Core generation logic shared by sendMessage.
+ * Calls generateText, appends response messages to history, handles errors.
  *
  * @param onProgress  Optional progress callback for the UI.
- * @param logPrefix   Log prefix for prepareStep messages.
  * @returns The assistant's text response.
  */
 async function runGeneration(onProgress?: (text: string) => void): Promise<string> {
@@ -367,7 +405,11 @@ async function runGeneration(onProgress?: (text: string) => void): Promise<strin
             messages: conversationHistory,
             tools,
             abortSignal,
-            stopWhen: stepCountIs(MAX_STEPS),
+            // Use MAX_STEPS + 1 so the SDK does not exit the loop before our
+            // prepareStep hook has a chance to inject the stop message on the
+            // last allowed tool-call step.  The actual limit is enforced by
+            // disabling tools in prepareStep when stepNumber >= MAX_STEPS - 1.
+            stopWhen: stepCountIs(MAX_STEPS + 1),
             onStepFinish: (stepResult) => handleStepFinish(onProgress, stepResult),
             prepareStep: handlePrepareStep,
         });
@@ -375,13 +417,6 @@ async function runGeneration(onProgress?: (text: string) => void): Promise<strin
         // Append all response messages (assistant + tool) to conversation history
         for (const msg of result.response.messages) {
             conversationHistory.push(msg as ModelMessage);
-        }
-
-        // Check if the step limit was reached
-        if (result.steps.length >= MAX_STEPS) {
-            const partialText = result.text || '';
-            console.log(`[Agent] Reached max steps (${MAX_STEPS}). Pausing for user confirmation.`);
-            return `${STEP_LIMIT_PREFIX}${partialText}`;
         }
 
         return result.text;
@@ -445,31 +480,6 @@ export async function sendMessage(userMessage: string, imageBase64?: string, ima
     }
 
     // Compress & trim history (after push so stripOldUserImages sees the new user msg)
-    await prepareHistory();
-
-    return runGeneration(onProgress);
-}
-
-/**
- * Continue generation after the step limit was reached.
- * Re-invokes generateText with the existing conversationHistory (which already
- * contains all previous assistant + tool messages) so the agent picks up
- * where it left off.
- */
-export async function continueGeneration(onProgress?: (text: string) => void): Promise<string> {
-    if (!isConfigured || !currentConfig.apiKey) {
-        return '[Agent] Not configured. Please set API key first via the Settings panel.';
-    }
-
-    console.log('[Agent] Continuing generation from where it left off...');
-
-    // Add user message FIRST (so prepareHistory sees it as the latest user msg)
-    conversationHistory.push({
-        role: 'user',
-        content: 'Please continue. Pick up from where you left off and keep working on the task.',
-    });
-
-    // Compress & trim history
     await prepareHistory();
 
     return runGeneration(onProgress);

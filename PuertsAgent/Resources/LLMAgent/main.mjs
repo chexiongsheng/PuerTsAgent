@@ -39630,7 +39630,19 @@ __name(trimMessagesByTokenBudget, "trimMessagesByTokenBudget");
 // src/agent/agent-core.mts
 var currentAbortController = null;
 var MAX_STEPS = 25;
-var STEP_LIMIT_PREFIX = "[STEP_LIMIT_REACHED]";
+var MAX_STEPS_MESSAGE = `CRITICAL - MAXIMUM STEPS REACHED
+
+The maximum number of steps allowed for this task has been reached. Tools are disabled. Respond with text only.
+
+STRICT REQUIREMENTS:
+1. Do NOT make any tool calls
+2. MUST provide a text response summarizing work done so far
+
+Response must include:
+- Statement that maximum steps have been reached
+- Summary of what has been accomplished so far
+- List of any remaining tasks that were not completed
+- Recommendations for what should be done next`;
 var DEFAULT_CONFIG = {
   apiKey: "",
   model: "gpt-4o-mini"
@@ -39725,6 +39737,7 @@ function handleStepFinish(onProgress, { stepNumber, text: text2, toolCalls, tool
 __name(handleStepFinish, "handleStepFinish");
 function handlePrepareStep({ messages, stepNumber, steps }) {
   if (stepNumber === 0) return void 0;
+  const isLastStep = stepNumber >= MAX_STEPS - 1;
   const lastFew = messages.slice(-3).map((m2, i2) => {
     const role = m2.role || "?";
     const contentPreview = typeof m2.content === "string" ? m2.content.substring(0, 40) : Array.isArray(m2.content) ? `[${m2.content.length} parts]` : "?";
@@ -39764,6 +39777,14 @@ ${summary}`
   const modified = newMessages !== messages;
   const lastMsg = newMessages[newMessages.length - 1];
   if (!lastMsg || lastMsg.role !== "tool") {
+    if (isLastStep) {
+      console.log(`[Agent] prepareStep(${stepNumber}): MAX_STEPS reached, injecting stop message and disabling tools.`);
+      newMessages = [...modified ? newMessages : messages, {
+        role: "user",
+        content: MAX_STEPS_MESSAGE
+      }];
+      return { messages: newMessages, tools: {} };
+    }
     return modified ? { messages: newMessages } : void 0;
   }
   const imageParts = [];
@@ -39808,7 +39829,15 @@ ${summary}`
       ]
     });
   }
-  return { messages: newMessages };
+  if (isLastStep) {
+    console.log(`[Agent] prepareStep(${stepNumber}): MAX_STEPS reached, injecting stop message and disabling tools.`);
+    newMessages = [...newMessages, {
+      role: "user",
+      content: MAX_STEPS_MESSAGE
+    }];
+    return { messages: newMessages, tools: {} };
+  }
+  return modified || imageParts.length > 0 ? { messages: newMessages } : void 0;
 }
 __name(handlePrepareStep, "handlePrepareStep");
 async function prepareHistory() {
@@ -39840,17 +39869,16 @@ async function runGeneration(onProgress) {
       messages: conversationHistory,
       tools,
       abortSignal,
-      stopWhen: stepCountIs(MAX_STEPS),
+      // Use MAX_STEPS + 1 so the SDK does not exit the loop before our
+      // prepareStep hook has a chance to inject the stop message on the
+      // last allowed tool-call step.  The actual limit is enforced by
+      // disabling tools in prepareStep when stepNumber >= MAX_STEPS - 1.
+      stopWhen: stepCountIs(MAX_STEPS + 1),
       onStepFinish: /* @__PURE__ */ __name((stepResult) => handleStepFinish(onProgress, stepResult), "onStepFinish"),
       prepareStep: handlePrepareStep
     });
     for (const msg of result.response.messages) {
       conversationHistory.push(msg);
-    }
-    if (result.steps.length >= MAX_STEPS) {
-      const partialText = result.text || "";
-      console.log(`[Agent] Reached max steps (${MAX_STEPS}). Pausing for user confirmation.`);
-      return `${STEP_LIMIT_PREFIX}${partialText}`;
     }
     return result.text;
   } catch (error48) {
@@ -39897,19 +39925,6 @@ async function sendMessage(userMessage, imageBase64, imageMimeType, onProgress) 
   return runGeneration(onProgress);
 }
 __name(sendMessage, "sendMessage");
-async function continueGeneration(onProgress) {
-  if (!isConfigured || !currentConfig.apiKey) {
-    return "[Agent] Not configured. Please set API key first via the Settings panel.";
-  }
-  console.log("[Agent] Continuing generation from where it left off...");
-  conversationHistory.push({
-    role: "user",
-    content: "Please continue. Pick up from where you left off and keep working on the task."
-  });
-  await prepareHistory();
-  return runGeneration(onProgress);
-}
-__name(continueGeneration, "continueGeneration");
 function abortGeneration() {
   if (currentAbortController) {
     console.log("[Agent] Aborting current generation...");
@@ -39976,28 +39991,6 @@ function onMessageSync(message) {
   return `[Echo] ${message}`;
 }
 __name(onMessageSync, "onMessageSync");
-function onContinueGeneration(callback, progressCallback) {
-  console.log("[Agent] User requested to continue generation.");
-  if (!getIsConfigured()) {
-    callback.Invoke("[Agent] Not configured. Please set your API key in Settings.", false);
-    return;
-  }
-  const onProgress = progressCallback ? (text2) => {
-    try {
-      progressCallback.Invoke(text2);
-    } catch (e2) {
-      console.error(`[Agent] Progress callback error: ${e2}`);
-    }
-  } : void 0;
-  continueGeneration(onProgress).then((response) => {
-    callback.Invoke(response, false);
-  }).catch((error48) => {
-    const errorMsg = `[Agent] Error: ${error48.message || String(error48)}`;
-    console.error(errorMsg);
-    callback.Invoke(errorMsg, true);
-  });
-}
-__name(onContinueGeneration, "onContinueGeneration");
 function onAbortGeneration() {
   abortGeneration();
 }
@@ -40034,7 +40027,6 @@ export {
   configureAgent,
   onAbortGeneration,
   onClearHistory,
-  onContinueGeneration,
   onGetHistoryLength,
   onInitialize,
   onIsConfigured,

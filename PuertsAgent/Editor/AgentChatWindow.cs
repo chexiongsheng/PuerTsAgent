@@ -83,14 +83,11 @@ namespace LLMAgent.Editor
             public bool IsUser;
             public string Timestamp;
             public string ImagePath; // optional: path to attached image
-            public bool ShowContinueButton; // true when step limit was reached
             public bool ShowRetryButton;    // true when an error occurred (e.g. timeout)
             public string RetryUserMessage; // original user message for retry
             public string RetryImagePath;   // original image path for retry
-            public bool RetryIsContinue;    // true if the failed operation was a "continue generation"
         }
 
-        private const string STEP_LIMIT_PREFIX = "[STEP_LIMIT_REACHED]";
         private const string ERROR_PREFIX = "[Agent] Error:";
 
         /// <summary>
@@ -763,63 +760,6 @@ namespace LLMAgent.Editor
             Rect bubbleRect = GUILayoutUtility.GetLastRect();
             HandleBubbleInteraction(bubbleRect, msg, msgIndex);
 
-            // "Continue" button when step limit was reached
-            if (msg.ShowContinueButton && !isWaitingForResponse)
-            {
-                GUILayout.Space(4);
-                EditorGUILayout.BeginHorizontal();
-
-                Color originalBg = GUI.backgroundColor;
-                GUI.backgroundColor = EditorGUIUtility.isProSkin
-                    ? new Color(0.3f, 0.6f, 0.9f, 1f)
-                    : new Color(0.2f, 0.5f, 0.85f, 1f);
-
-                GUIStyle continueButtonStyle = new GUIStyle(GUI.skin.button)
-                {
-                    fontStyle = FontStyle.Bold,
-                    fontSize = 12,
-                    padding = new RectOffset(12, 12, 6, 6),
-                    normal = { textColor = Color.white },
-                    hover = { textColor = Color.white }
-                };
-
-                if (GUILayout.Button("\u25B6 Reached max tool calls. Continue?", continueButtonStyle, GUILayout.Height(28)))
-                {
-                    // Remove the continue button by clearing the flag
-                    var updated = messages[msgIndex];
-                    updated.ShowContinueButton = false;
-                    messages[msgIndex] = updated;
-
-                    // Start continuation
-                    isWaitingForResponse = true;
-                    shouldScrollToBottom = true;
-
-                    // Create in-progress agent bubble
-                    BeginProgressBubble();
-
-                    Repaint();
-
-                    scriptManager.ContinueGenerationAsync((response, isError) =>
-                    {
-                        isWaitingForResponse = false;
-
-                        bool isActualError = isError || (response != null && response.StartsWith(ERROR_PREFIX));
-                        bool hitStepLimit = !isActualError && response != null && response.StartsWith(STEP_LIMIT_PREFIX);
-                        string displayText = hitStepLimit ? response.Substring(STEP_LIMIT_PREFIX.Length) : response;
-
-                        if (hitStepLimit && string.IsNullOrWhiteSpace(displayText))
-                        {
-                            displayText = "(The agent has been working on your request...)";
-                        }
-
-                        FinalizeProgressBubble(displayText, hitStepLimit, isActualError, isActualError, null, null);
-                    }, OnProgressUpdate);
-                }
-
-                GUI.backgroundColor = originalBg;
-                EditorGUILayout.EndHorizontal();
-            }
-
             // "Retry" button when an error occurred
             if (msg.ShowRetryButton && !isWaitingForResponse)
             {
@@ -847,7 +787,6 @@ namespace LLMAgent.Editor
                     retryUpdated.ShowRetryButton = false;
                     messages[msgIndex] = retryUpdated;
 
-                    bool isContinue = msg.RetryIsContinue;
                     string retryMessage = msg.RetryUserMessage;
                     string retryImagePath = msg.RetryImagePath;
 
@@ -860,46 +799,16 @@ namespace LLMAgent.Editor
 
                     Repaint();
 
-                    if (isContinue)
+                    scriptManager.SendMessageAsync(retryMessage, retryImagePath, (response, isError) =>
                     {
-                        // Retry a "continue generation" operation
-                        scriptManager.ContinueGenerationAsync((response, isError) =>
-                        {
-                            isWaitingForResponse = false;
+                        isWaitingForResponse = false;
 
-                            bool isActualError = isError || (response != null && response.StartsWith(ERROR_PREFIX));
-                            bool hitStepLimit = !isActualError && response != null && response.StartsWith(STEP_LIMIT_PREFIX);
-                            string retryDisplayText = hitStepLimit ? response.Substring(STEP_LIMIT_PREFIX.Length) : response;
+                        bool isActualError = isError || (response != null && response.StartsWith(ERROR_PREFIX));
 
-                            if (hitStepLimit && string.IsNullOrWhiteSpace(retryDisplayText))
-                            {
-                                retryDisplayText = "(The agent has been working on your request...)";
-                            }
-
-                            FinalizeProgressBubble(retryDisplayText, hitStepLimit, isActualError, isActualError, null, null);
-                        }, OnProgressUpdate);
-                    }
-                    else
-                    {
-                        // Retry a normal send message operation
-                        scriptManager.SendMessageAsync(retryMessage, retryImagePath, (response, isError) =>
-                        {
-                            isWaitingForResponse = false;
-
-                            bool isActualError = isError || (response != null && response.StartsWith(ERROR_PREFIX));
-                            bool hitStepLimit = !isActualError && response != null && response.StartsWith(STEP_LIMIT_PREFIX);
-                            string retryDisplayText = hitStepLimit ? response.Substring(STEP_LIMIT_PREFIX.Length) : response;
-
-                            if (hitStepLimit && string.IsNullOrWhiteSpace(retryDisplayText))
-                            {
-                                retryDisplayText = "(The agent has been working on your request...)";
-                            }
-
-                            FinalizeProgressBubble(retryDisplayText, hitStepLimit, isActualError, false,
-                                isActualError ? retryMessage : null,
-                                isActualError ? retryImagePath : null);
-                        }, OnProgressUpdate);
-                    }
+                        FinalizeProgressBubble(response, isActualError,
+                            isActualError ? retryMessage : null,
+                            isActualError ? retryImagePath : null);
+                    }, OnProgressUpdate);
                 }
 
                 GUI.backgroundColor = originalBgRetry;
@@ -1209,17 +1118,9 @@ namespace LLMAgent.Editor
 
                     // Detect errors: either isError flag from TS, or response starts with error prefix
                     bool isActualError = isError || (response != null && response.StartsWith(ERROR_PREFIX));
-                    bool hitStepLimit = !isActualError && response != null && response.StartsWith(STEP_LIMIT_PREFIX);
-                    string displayText = hitStepLimit ? response.Substring(STEP_LIMIT_PREFIX.Length) : response;
-
-                    // If the display text is empty (all steps were tool calls), show an informative message
-                    if (hitStepLimit && string.IsNullOrWhiteSpace(displayText))
-                    {
-                        displayText = "(The agent has been working on your request...)";
-                    }
 
                     // Finalize the progress bubble with the final response
-                    FinalizeProgressBubble(displayText, hitStepLimit, isActualError, false,
+                    FinalizeProgressBubble(response, isActualError,
                         isActualError ? text : null,
                         isActualError ? imagePath : null);
                 }, OnProgressUpdate);
@@ -1276,8 +1177,8 @@ namespace LLMAgent.Editor
         /// <summary>
         /// Finalize the in-progress bubble with the final response.
         /// </summary>
-        private void FinalizeProgressBubble(string finalText, bool hitStepLimit, bool isError,
-            bool retryIsContinue, string retryUserMessage, string retryImagePath)
+        private void FinalizeProgressBubble(string finalText, bool isError,
+            string retryUserMessage, string retryImagePath)
         {
             // Build the final display: progress fragments + separator + final text
             string combinedText;
@@ -1302,9 +1203,7 @@ namespace LLMAgent.Editor
             {
                 var updated = messages[progressBubbleIndex];
                 updated.Text = combinedText;
-                updated.ShowContinueButton = hitStepLimit;
                 updated.ShowRetryButton = isError;
-                updated.RetryIsContinue = retryIsContinue;
                 updated.RetryUserMessage = retryUserMessage;
                 updated.RetryImagePath = retryImagePath;
                 messages[progressBubbleIndex] = updated;
@@ -1317,9 +1216,7 @@ namespace LLMAgent.Editor
                     Text = combinedText,
                     IsUser = false,
                     Timestamp = DateTime.Now.ToString("HH:mm"),
-                    ShowContinueButton = hitStepLimit,
                     ShowRetryButton = isError,
-                    RetryIsContinue = retryIsContinue,
                     RetryUserMessage = retryUserMessage,
                     RetryImagePath = retryImagePath
                 });
