@@ -29,7 +29,7 @@ namespace LLMAgent
         private Action onClearHistory;
         private Func<int> onGetHistoryLength;
         private Func<bool> onIsConfigured;
-        private Action<string> onSetResourceRoot;
+        private Action<string, Action> onInitialize;
 
         private const string EntryModule = "LLMAgent/main.mjs";
 
@@ -62,8 +62,13 @@ namespace LLMAgent
 
         /// <summary>
         /// Initialize ScriptEnv and load the entry TS module.
+        /// Initialization is asynchronous — <paramref name="onReady"/> is invoked
+        /// once all JS modules (builtins, skills, etc.) have finished loading.
+        /// <see cref="IsInitialized"/> remains false until the callback fires.
         /// </summary>
-        public void Initialize()
+        /// <param name="resourceRoot">Resource root path passed to TS onInitialize (e.g. "LLMAgent/editor-assistant").</param>
+        /// <param name="onReady">Optional callback invoked when async initialization completes.</param>
+        public void Initialize(string resourceRoot, Action onReady = null)
         {
             if (isInitialized)
                 return;
@@ -84,7 +89,7 @@ namespace LLMAgent
                 onClearHistory = moduleExports.Get<Action>("onClearHistory");
                 onGetHistoryLength = moduleExports.Get<Func<int>>("onGetHistoryLength");
                 onIsConfigured = moduleExports.Get<Func<bool>>("onIsConfigured");
-                onSetResourceRoot = moduleExports.Get<Action<string>>("onSetResourceRoot");
+                onInitialize = moduleExports.Get<Action<string, Action>>("onInitialize");
 
                 if (onMessageReceived == null)
                 {
@@ -93,16 +98,17 @@ namespace LLMAgent
                     return;
                 }
 
-                isInitialized = true;
-                lastError = null;
-
-                // Set resource root so TS side can auto-discover skills, etc.
-                onSetResourceRoot?.Invoke("LLMAgent/editor-assistant");
-
-                // Start ticking ScriptEnv
+                // Start ticking ScriptEnv immediately (needed for JS microtask/promise processing)
                 StartTicking();
 
-                Debug.Log("[AgentScriptManager] ScriptEnv initialized and module loaded successfully.");
+                // Trigger async resource initialization; isInitialized will be set in the callback
+                onInitialize?.Invoke(resourceRoot, () =>
+                {
+                    isInitialized = true;
+                    lastError = null;
+                    Debug.Log("[AgentScriptManager] ScriptEnv initialized and all modules loaded successfully.");
+                    onReady?.Invoke();
+                });
             }
             catch (Exception ex)
             {
@@ -359,7 +365,7 @@ namespace LLMAgent
             onClearHistory = null;
             onGetHistoryLength = null;
             onIsConfigured = null;
-            onSetResourceRoot = null;
+            onInitialize = null;
             isInitialized = false;
 
             if (scriptEnv != null)

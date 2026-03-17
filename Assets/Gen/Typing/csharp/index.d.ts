@@ -351,6 +351,15 @@
         {
             protected [__keep_incompatibility]: never;
         }
+        interface Action
+        { 
+        () : void; 
+        Invoke?: () => void;
+        }
+        var Action: { new (func: () => void): Action; }
+        interface IAsyncResult
+        {
+        }
         interface Converter$2<TInput, TOutput>
         { 
         (input: TInput) : TOutput; 
@@ -370,9 +379,6 @@
         { 
         (arg1: T1, arg2: T2) : void; 
         Invoke?: (arg1: T1, arg2: T2) => void;
-        }
-        interface IAsyncResult
-        {
         }
         interface AsyncCallback
         { 
@@ -524,6 +530,27 @@
     }
     namespace Puerts {
         class ScriptEnv extends System.Object implements System.IDisposable
+        {
+            protected [__keep_incompatibility]: never;
+            public TickHandler : System.Action
+            public get Backend(): Puerts.Backend;
+            public GetTypeByString ($className: string) : System.Type
+            public GetLoader () : any
+            public LoadAddon ($name: string) : void
+            public ExecuteModule ($specifier: string) : Puerts.ScriptObject
+            public Eval ($chunk: string, $chunkName?: string) : void
+            public Tick () : void
+            public WaitDebugger () : void
+            public WaitDebuggerAsync () : $Task<any>
+            public Dispose () : void
+            public CheckLiveness ($shouldThrow?: boolean) : boolean
+            public constructor ($backend: Puerts.Backend, $debugPort?: number)
+        }
+        class Backend extends System.Object
+        {
+            protected [__keep_incompatibility]: never;
+        }
+        class ScriptObject extends System.Object implements System.IDisposable
         {
             protected [__keep_incompatibility]: never;
         }
@@ -1203,6 +1230,17 @@
         class Scene extends System.ValueType
         {
             protected [__keep_incompatibility]: never;
+        }
+    }
+    namespace System.Threading.Tasks {
+        class Task extends System.Object implements System.IAsyncResult, System.Threading.IThreadPoolWorkItem, System.IDisposable
+        {
+            protected [__keep_incompatibility]: never;
+        }
+    }
+    namespace System.Threading {
+        interface IThreadPoolWorkItem
+        {
         }
     }
     namespace System.Collections.ObjectModel {

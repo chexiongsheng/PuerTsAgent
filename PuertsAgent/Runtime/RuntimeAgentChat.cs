@@ -32,16 +32,10 @@ namespace LLMAgent
         private void Start()
         {
             agentManager = new AgentScriptManager();
-            agentManager.Initialize();
-
-            if (agentManager.IsInitialized)
+            agentManager.Initialize("LLMAgent/editor-assistant", () =>
             {
                 Debug.Log("[RuntimeAgentChat] Agent initialized successfully.");
-            }
-            else
-            {
-                Debug.LogError($"[RuntimeAgentChat] Agent failed to initialize: {agentManager.LastError}");
-            }
+            });
         }
 
         private void OnDestroy()

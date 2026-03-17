@@ -38954,17 +38954,108 @@ function captureSceneViewPromise(maxWidth, maxHeight) {
 }
 __name(captureSceneViewPromise, "captureSceneViewPromise");
 
+// src/resource-root.mts
+var resourceRoot = null;
+function setResourceRoot(root) {
+  resourceRoot = root.endsWith("/") ? root.slice(0, -1) : root;
+  console.log(`[ResourceRoot] Set to: ${resourceRoot}`);
+}
+__name(setResourceRoot, "setResourceRoot");
+function getResourceRoot() {
+  return resourceRoot;
+}
+__name(getResourceRoot, "getResourceRoot");
+
 // src/tools/eval-tool.mts
-var jsEnv = CS.LLMAgent.ScriptEnvBridge.CreateJavaScriptEnv();
-var builtinSummaries = (() => {
-  const csArray = CS.LLMAgent.ScriptEnvBridge.LoadBuiltinModules(jsEnv);
-  const result = [];
-  for (let i2 = 0; i2 < csArray.Length; i2++) {
-    result.push(csArray.get_Item(i2));
+var jsEnv = null;
+var builtinSummariesText = "";
+function getJsEnv() {
+  if (!jsEnv) {
+    jsEnv = CS.LLMAgent.ScriptEnvBridge.CreateJavaScriptEnv();
   }
-  return result;
-})();
-var builtinSummariesText = builtinSummaries.length > 0 ? "\n\n### Built-in Helper Modules\n\nSeveral helper modules are pre-loaded in the evalJsCode VM under the path prefix `LLMAgent/editor-assistant/builtin/`. Each module exports:\n- **`description`** \u2014 a detailed string documenting every function signature and usage.\n- **Named functions** \u2014 the actual helper functions you can call.\n\nTo use a module, load it via ESM dynamic `import()`.\n\n**IMPORTANT**: The summaries below describe what each module does, but intentionally do NOT list function names or signatures. You MUST first execute a script that reads the module's `.description` export to discover available functions and their correct parameter signatures. All functions validate their arguments at runtime and will throw errors if called with wrong parameters. NEVER guess or assume function names \u2014 always read `.description` first.\n\nStep 1 \u2014 Read description (first-time only):\n```\nasync function execute() {\n    const sv = await import('LLMAgent/editor-assistant/builtin/scene-view.mjs');\n    return sv.description;\n}\n```\n\nStep 2 \u2014 Call functions after you know the signatures:\n```\nasync function execute() {\n    const sv = await import('LLMAgent/editor-assistant/builtin/scene-view.mjs');\n    return sv.focusSceneViewOn('Main Camera');\n}\n```\n\nAvailable modules:\n\n" + builtinSummaries.join("\n\n") : "";
+  return jsEnv;
+}
+__name(getJsEnv, "getJsEnv");
+async function initBuiltins() {
+  const root = getResourceRoot();
+  if (!root) {
+    console.warn("[EvalTool] Resource root not set, skipping builtin loading.");
+    return;
+  }
+  const env = getJsEnv();
+  const builtinPath = `${root}/builtin`;
+  const assets = CS.UnityEngine.Resources.LoadAll(builtinPath, puer.$typeof(CS.UnityEngine.TextAsset));
+  if (!assets || assets.Length === 0) {
+    console.log(`[EvalTool] No builtin assets found at Resources/${builtinPath}/`);
+    return;
+  }
+  const specifiers = [];
+  for (let i2 = 0; i2 < assets.Length; i2++) {
+    const asset = assets.get_Item(i2);
+    specifiers.push(`${builtinPath}/${asset.name}.mjs`);
+  }
+  const importEntries = specifiers.map((s2, idx) => `import('${s2}').then(function(m) { return { index: ${idx}, specifier: '${s2}', summary: m.summary || '', error: null }; }).catch(function(e) { return { index: ${idx}, specifier: '${s2}', summary: '', error: String(e.message || e) }; })`).join(",\n        ");
+  const batchScript = `(function(onFinish) {
+    Promise.all([
+        ${importEntries}
+    ]).then(function(results) {
+        onFinish.Invoke(JSON.stringify(results));
+    });
+})`;
+  const results = await new Promise((resolve2, reject) => {
+    CS.LLMAgent.ScriptEnvBridge.Eval(env, batchScript, (resultJson) => {
+      try {
+        resolve2(JSON.parse(resultJson));
+      } catch (e2) {
+        reject(e2);
+      }
+    });
+  });
+  const summaries = [];
+  for (const entry of results) {
+    if (entry.error) {
+      console.warn(`[EvalTool] Failed to load builtin module '${entry.specifier}': ${entry.error}`);
+    } else {
+      if (entry.summary) {
+        summaries.push(entry.summary);
+      }
+      console.log(`[EvalTool] Loaded builtin module '${entry.specifier}'.`);
+    }
+  }
+  builtinSummariesText = summaries.length > 0 ? `
+
+### Built-in Helper Modules
+
+Several helper modules are pre-loaded in the evalJsCode VM under the path prefix \`${builtinPath}/\`. Each module exports:
+- **\`description\`** \u2014 a detailed string documenting every function signature and usage.
+- **Named functions** \u2014 the actual helper functions you can call.
+
+To use a module, load it via ESM dynamic \`import()\`.
+
+**IMPORTANT**: The summaries below describe what each module does, but intentionally do NOT list function names or signatures. You MUST first execute a script that reads the module's \`.description\` export to discover available functions and their correct parameter signatures. All functions validate their arguments at runtime and will throw errors if called with wrong parameters. NEVER guess or assume function names \u2014 always read \`.description\` first.
+
+Step 1 \u2014 Read description (first-time only):
+\`\`\`
+async function execute() {
+    const sv = await import('${builtinPath}/scene-view.mjs');
+    return sv.description;
+}
+\`\`\`
+
+Step 2 \u2014 Call functions after you know the signatures:
+\`\`\`
+async function execute() {
+    const sv = await import('${builtinPath}/scene-view.mjs');
+    return sv.focusSceneViewOn('Main Camera');
+}
+\`\`\`
+
+Available modules:
+
+` + summaries.join("\n\n") : "";
+  console.log(`[EvalTool] Loaded ${summaries.length} builtin summary(s).`);
+}
+__name(initBuiltins, "initBuiltins");
 var RUNNER_CODE = `(function(onFinish) {
     execute().then(function(result) {
         var resultStr;
@@ -38995,11 +39086,12 @@ function createEvalTools() {
         )
       }),
       execute: /* @__PURE__ */ __name(async ({ code }) => {
+        const env = getJsEnv();
         try {
           console.log(`[EvalJsTool] Executing code:
 ${code}`);
           try {
-            CS.LLMAgent.ScriptEnvBridge.EvalSync(jsEnv, code);
+            CS.LLMAgent.ScriptEnvBridge.EvalSync(env, code);
           } catch (defineError) {
             return {
               success: false,
@@ -39008,7 +39100,7 @@ ${code}`);
             };
           }
           const resultJson = await new Promise((resolve2) => {
-            CS.LLMAgent.ScriptEnvBridge.Eval(jsEnv, RUNNER_CODE, resolve2);
+            CS.LLMAgent.ScriptEnvBridge.Eval(env, RUNNER_CODE, resolve2);
           });
           const parsed = JSON.parse(resultJson);
           if (parsed.__error) {
@@ -39036,18 +39128,6 @@ ${code}`);
   };
 }
 __name(createEvalTools, "createEvalTools");
-
-// src/resource-root.mts
-var resourceRoot = null;
-function setResourceRoot(root) {
-  resourceRoot = root.endsWith("/") ? root.slice(0, -1) : root;
-  console.log(`[ResourceRoot] Set to: ${resourceRoot}`);
-}
-__name(setResourceRoot, "setResourceRoot");
-function getResourceRoot() {
-  return resourceRoot;
-}
-__name(getResourceRoot, "getResourceRoot");
 
 // src/tools/skill-tool.mts
 var skills = /* @__PURE__ */ new Map();
@@ -39913,21 +39993,31 @@ function onIsConfigured() {
   return getIsConfigured();
 }
 __name(onIsConfigured, "onIsConfigured");
-function onSetResourceRoot(root) {
+function onInitialize(root, onReady) {
   setResourceRoot(root);
-  initSkills();
+  (async () => {
+    try {
+      await initBuiltins();
+      initSkills();
+      console.log("[Agent] Resource initialization complete.");
+    } catch (e2) {
+      console.error(`[Agent] Initialization error: ${e2.message || e2}`);
+    } finally {
+      onReady.Invoke();
+    }
+  })();
 }
-__name(onSetResourceRoot, "onSetResourceRoot");
+__name(onInitialize, "onInitialize");
 export {
   configureAgent,
   onAbortGeneration,
   onClearHistory,
   onContinueGeneration,
   onGetHistoryLength,
+  onInitialize,
   onIsConfigured,
   onMessageReceived,
-  onMessageSync,
-  onSetResourceRoot
+  onMessageSync
 };
 /*! Bundled license information:
 

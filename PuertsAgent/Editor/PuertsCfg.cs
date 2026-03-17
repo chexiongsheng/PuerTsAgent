@@ -31,6 +31,7 @@ namespace LLMAgent.Editor
                     typeof(UnityEngine.Resources),
                     typeof(UnityEngine.Object),
                     typeof(UnityEngine.TextAsset),
+                    typeof(Puerts.ScriptEnv),
                     typeof(System.Array),
                     typeof(Action<string, bool>),
                     typeof(Action<string>),

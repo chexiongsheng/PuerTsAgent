@@ -19,6 +19,7 @@ import {
 } from './agent/agent-core.mjs';
 import { setResourceRoot } from './resource-root.mjs';
 import { initSkills } from './tools/skill-tool.mjs';
+import { initBuiltins } from './tools/eval-tool.mjs';
 
 // Start capturing Unity logs for the agent's log tool
 CS.LLMAgent.UnityLogBridge.StartListening();
@@ -154,11 +155,25 @@ export function onIsConfigured(): boolean {
 }
 
 /**
- * Set the unified resource root and initialize resource-dependent modules.
- * C# calls this once at startup with the Resources path prefix.
+ * Initialize resource-dependent modules (builtins, skills, etc.).
+ * C# calls this once at startup with the Resources path prefix and a completion callback.
+ * The callback is invoked after all async initialization finishes.
  * @param root - Unity Resources path prefix, e.g. "LLMAgent/editor-assistant"
+ * @param onReady - C# Action callback invoked when initialization is complete
  */
-export function onSetResourceRoot(root: string): void {
+export function onInitialize(root: string, onReady: CS.System.Action): void {
     setResourceRoot(root);
-    initSkills();
+
+    // Async initialization — load builtins (supports top-level await) then skills
+    (async () => {
+        try {
+            await initBuiltins();
+            initSkills();
+            console.log('[Agent] Resource initialization complete.');
+        } catch (e: any) {
+            console.error(`[Agent] Initialization error: ${e.message || e}`);
+        } finally {
+            onReady.Invoke!();
+        }
+    })();
 }

@@ -141,13 +141,15 @@ namespace LLMAgent.Editor
             }
 
             scriptManager = new AgentScriptManager();
-            scriptManager.Initialize();
-
-            // Auto-configure if API key is available
-            if (scriptManager.IsInitialized && !string.IsNullOrEmpty(apiKey))
+            scriptManager.Initialize("LLMAgent/editor-assistant", () =>
             {
-                scriptManager.ConfigureAgent(apiKey, baseURL, model);
-            }
+                // Auto-configure if API key is available
+                if (!string.IsNullOrEmpty(apiKey))
+                {
+                    scriptManager.ConfigureAgent(apiKey, baseURL, model);
+                }
+                Repaint();
+            });
         }
 
         #region Texture Helpers

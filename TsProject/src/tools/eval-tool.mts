@@ -6,47 +6,131 @@
  */
 import { tool } from 'ai';
 import { z } from 'zod';
+import { getResourceRoot } from '../resource-root.mjs';
 
-// The eval VM (jsEnv) is created once at module load time so that:
-// 1. Builtin modules are loaded via ExecuteModule (making them available for dynamic import).
-// 2. The summaries extracted from builtin modules can be included in the tool description.
-const jsEnv: CS.Puerts.ScriptEnv = CS.LLMAgent.ScriptEnvBridge.CreateJavaScriptEnv();
+// ---------------------------------------------------------------------------
+// Eval VM & Builtin state (lazily initialised via initBuiltins)
+// ---------------------------------------------------------------------------
 
-// Load all builtin modules into the eval VM and collect their summaries.
-const builtinSummaries: string[] = (() => {
-    const csArray = CS.LLMAgent.ScriptEnvBridge.LoadBuiltinModules(jsEnv);
-    const result: string[] = [];
-    for (let i = 0; i < csArray.Length; i++) {
-        result.push(csArray.get_Item(i));
+/** The eval VM instance. Created once in initBuiltins(). */
+let jsEnv: CS.Puerts.ScriptEnv | null = null;
+
+/** Builtin helper module summaries, populated by initBuiltins(). */
+export let builtinSummariesText: string = '';
+
+/**
+ * Get or create the eval VM.
+ */
+function getJsEnv(): CS.Puerts.ScriptEnv {
+    if (!jsEnv) {
+        jsEnv = CS.LLMAgent.ScriptEnvBridge.CreateJavaScriptEnv();
     }
-    return result;
-})();
+    return jsEnv;
+}
 
-/** Builtin helper module summaries, joined for inclusion in the tool description. */
-export const builtinSummariesText: string = builtinSummaries.length > 0
-    ? '\n\n### Built-in Helper Modules\n\n' +
-      'Several helper modules are pre-loaded in the evalJsCode VM under the path prefix `LLMAgent/editor-assistant/builtin/`. ' +
-      'Each module exports:\n' +
-      '- **`description`** — a detailed string documenting every function signature and usage.\n' +
-      '- **Named functions** — the actual helper functions you can call.\n\n' +
-      'To use a module, load it via ESM dynamic `import()`.\n\n' +
-      '**IMPORTANT**: The summaries below describe what each module does, but intentionally do NOT list function names or signatures. ' +
-      'You MUST first execute a script that reads the module\'s `.description` export to discover available functions and their correct parameter signatures. ' +
-      'All functions validate their arguments at runtime and will throw errors if called with wrong parameters. ' +
-      'NEVER guess or assume function names — always read `.description` first.\n\n' +
-      'Step 1 — Read description (first-time only):\n' +
-      '```\nasync function execute() {\n' +
-      '    const sv = await import(\'LLMAgent/editor-assistant/builtin/scene-view.mjs\');\n' +
-      '    return sv.description;\n' +
-      '}\n```\n\n' +
-      'Step 2 — Call functions after you know the signatures:\n' +
-      '```\nasync function execute() {\n' +
-      '    const sv = await import(\'LLMAgent/editor-assistant/builtin/scene-view.mjs\');\n' +
-      '    return sv.focusSceneViewOn(\'Main Camera\');\n' +
-      '}\n```\n\n' +
-      'Available modules:\n\n' +
-      builtinSummaries.join('\n\n')
-    : '';
+// ---------------------------------------------------------------------------
+// Builtin initialisation via dynamic import()
+// ---------------------------------------------------------------------------
+
+/**
+ * Initialise builtin helper modules by discovering `.mjs` assets under
+ * `<resourceRoot>/builtin/` and dynamically importing each one in the
+ * eval VM to extract its `summary` export.
+ *
+ * Dynamic import() supports top-level await inside the builtin modules.
+ *
+ * Must be called after setResourceRoot().
+ * Returns a promise that resolves when all builtins have been loaded.
+ */
+export async function initBuiltins(): Promise<void> {
+    const root = getResourceRoot();
+    if (!root) {
+        console.warn('[EvalTool] Resource root not set, skipping builtin loading.');
+        return;
+    }
+
+    const env = getJsEnv();
+    const builtinPath = `${root}/builtin`;
+    const assets = CS.UnityEngine.Resources.LoadAll(builtinPath, puer.$typeof(CS.UnityEngine.TextAsset));
+    if (!assets || assets.Length === 0) {
+        console.log(`[EvalTool] No builtin assets found at Resources/${builtinPath}/`);
+        return;
+    }
+
+    // Collect all module specifiers
+    const specifiers: string[] = [];
+    for (let i = 0; i < assets.Length; i++) {
+        const asset = assets.get_Item(i) as CS.UnityEngine.TextAsset;
+        specifiers.push(`${builtinPath}/${asset.name}.mjs`);
+    }
+
+    // Build a single script that imports all modules and returns all summaries
+    const importEntries = specifiers
+        .map((s, idx) => `import('${s}').then(function(m) { return { index: ${idx}, specifier: '${s}', summary: m.summary || '', error: null }; }).catch(function(e) { return { index: ${idx}, specifier: '${s}', summary: '', error: String(e.message || e) }; })`)
+        .join(',\n        ');
+    const batchScript = `(function(onFinish) {
+    Promise.all([
+        ${importEntries}
+    ]).then(function(results) {
+        onFinish.Invoke(JSON.stringify(results));
+    });
+})`;
+
+    // Single Eval call for all modules
+    const results = await new Promise<Array<{ index: number; specifier: string; summary: string; error: string | null }>>((resolve, reject) => {
+        CS.LLMAgent.ScriptEnvBridge.Eval(env, batchScript, (resultJson: string) => {
+            try {
+                resolve(JSON.parse(resultJson));
+            } catch (e) {
+                reject(e);
+            }
+        });
+    });
+
+    const summaries: string[] = [];
+    for (const entry of results) {
+        if (entry.error) {
+            console.warn(`[EvalTool] Failed to load builtin module '${entry.specifier}': ${entry.error}`);
+        } else {
+            if (entry.summary) {
+                summaries.push(entry.summary);
+            }
+            console.log(`[EvalTool] Loaded builtin module '${entry.specifier}'.`);
+        }
+    }
+
+    // Build the description text from collected summaries
+    builtinSummariesText = summaries.length > 0
+        ? '\n\n### Built-in Helper Modules\n\n' +
+          `Several helper modules are pre-loaded in the evalJsCode VM under the path prefix \`${builtinPath}/\`. ` +
+          'Each module exports:\n' +
+          '- **`description`** — a detailed string documenting every function signature and usage.\n' +
+          '- **Named functions** — the actual helper functions you can call.\n\n' +
+          'To use a module, load it via ESM dynamic `import()`.\n\n' +
+          '**IMPORTANT**: The summaries below describe what each module does, but intentionally do NOT list function names or signatures. ' +
+          'You MUST first execute a script that reads the module\'s `.description` export to discover available functions and their correct parameter signatures. ' +
+          'All functions validate their arguments at runtime and will throw errors if called with wrong parameters. ' +
+          'NEVER guess or assume function names — always read `.description` first.\n\n' +
+          'Step 1 — Read description (first-time only):\n' +
+          '```\nasync function execute() {\n' +
+          `    const sv = await import('${builtinPath}/scene-view.mjs');\n` +
+          '    return sv.description;\n' +
+          '}\n```\n\n' +
+          'Step 2 — Call functions after you know the signatures:\n' +
+          '```\nasync function execute() {\n' +
+          `    const sv = await import('${builtinPath}/scene-view.mjs');\n` +
+          '    return sv.focusSceneViewOn(\'Main Camera\');\n' +
+          '}\n```\n\n' +
+          'Available modules:\n\n' +
+          summaries.join('\n\n')
+        : '';
+
+    console.log(`[EvalTool] Loaded ${summaries.length} builtin summary(s).`);
+}
+
+// ---------------------------------------------------------------------------
+// Runner code
+// ---------------------------------------------------------------------------
 
 // Fixed runner code that calls the globally defined execute() function,
 // handles async result serialization and error reporting via onFinish callback.
@@ -67,6 +151,10 @@ const RUNNER_CODE = `(function(onFinish) {
         onFinish.Invoke(JSON.stringify({ __error: true, message: String(err.message || err), stack: String(err.stack || '') }));
     });
 })`;
+
+// ---------------------------------------------------------------------------
+// Tool factory
+// ---------------------------------------------------------------------------
 
 /**
  * Create eval tools that the agent can use to execute JS code at runtime.
@@ -104,16 +192,14 @@ export function createEvalTools() {
                     ),
             }),
             execute: async ({ code }) => {
+                const env = getJsEnv();
                 try {
                     console.log(`[EvalJsTool] Executing code:\n${code}`);
 
                     // Step 1: Define the execute() function via EvalSync.
-                    // The user code is eval'd as-is, so error line/column numbers
-                    // correspond exactly to the code the AI wrote.
                     try {
-                        CS.LLMAgent.ScriptEnvBridge.EvalSync(jsEnv, code);
+                        CS.LLMAgent.ScriptEnvBridge.EvalSync(env, code);
                     } catch (defineError: any) {
-                        // Syntax error or top-level error in the function definition
                         return {
                             success: false,
                             error: defineError.message || String(defineError),
@@ -124,7 +210,7 @@ export function createEvalTools() {
                     // Step 2: Run the fixed runner that calls execute() and
                     // serialises the result / error back through onFinish.
                     const resultJson = await new Promise<string>((resolve) => {
-                        CS.LLMAgent.ScriptEnvBridge.Eval(jsEnv, RUNNER_CODE, resolve);
+                        CS.LLMAgent.ScriptEnvBridge.Eval(env, RUNNER_CODE, resolve);
                     });
 
                     const parsed = JSON.parse(resultJson);
