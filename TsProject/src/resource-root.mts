@@ -2,7 +2,7 @@
  * Unified resource root management.
  *
  * C# sets this once at startup (e.g. "LLMAgent/editor-assistant").
- * Sub-modules (skills, builtin, etc.) read it via getResourceRoot().
+ * Sub-modules (skills, builtins, etc.) read it via getResourceRoot().
  */
 
 let resourceRoot: string | null = null;

@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// src/editor-assistant/builtin/scene-view.mts
+// src/editor-assistant/builtins/scene-view.mts
 var summary = `**scene-view** \u2014 Scene view camera control, scene object hierarchy inspection, and scene manipulation. Read \`.description\` to see available functions and their signatures.`;
 var description = `
 - **\`sceneViewZoom(direction, amount?)\`** \u2014 Zoom the Scene view camera in or out (like mouse scroll wheel).

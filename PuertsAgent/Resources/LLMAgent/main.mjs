@@ -38979,14 +38979,14 @@ __name(getJsEnv, "getJsEnv");
 async function initBuiltins() {
   const root = getResourceRoot();
   if (!root) {
-    console.warn("[EvalTool] Resource root not set, skipping builtin loading.");
+    console.warn("[EvalTool] Resource root not set, skipping builtins loading.");
     return;
   }
   const env = getJsEnv();
-  const builtinPath = `${root}/builtin`;
+  const builtinPath = `${root}/builtins`;
   const assets = CS.UnityEngine.Resources.LoadAll(builtinPath, puer.$typeof(CS.UnityEngine.TextAsset));
   if (!assets || assets.Length === 0) {
-    console.log(`[EvalTool] No builtin assets found at Resources/${builtinPath}/`);
+    console.log(`[EvalTool] No builtins assets found at Resources/${builtinPath}/`);
     return;
   }
   const specifiers = [];
@@ -39014,12 +39014,12 @@ async function initBuiltins() {
   const summaries = [];
   for (const entry of results) {
     if (entry.error) {
-      console.warn(`[EvalTool] Failed to load builtin module '${entry.specifier}': ${entry.error}`);
+      console.warn(`[EvalTool] Failed to load builtins module '${entry.specifier}': ${entry.error}`);
     } else {
       if (entry.summary) {
         summaries.push(entry.summary);
       }
-      console.log(`[EvalTool] Loaded builtin module '${entry.specifier}'.`);
+      console.log(`[EvalTool] Loaded builtins module '${entry.specifier}'.`);
     }
   }
   builtinSummariesText = summaries.length > 0 ? `
@@ -39053,7 +39053,7 @@ async function execute() {
 Available modules:
 
 ` + summaries.join("\n\n") : "";
-  console.log(`[EvalTool] Loaded ${summaries.length} builtin summary(s).`);
+  console.log(`[EvalTool] Loaded ${summaries.length} builtins summary(s).`);
 }
 __name(initBuiltins, "initBuiltins");
 var RUNNER_CODE = `(function(onFinish) {

@@ -9,13 +9,13 @@ import { z } from 'zod';
 import { getResourceRoot } from '../resource-root.mjs';
 
 // ---------------------------------------------------------------------------
-// Eval VM & Builtin state (lazily initialised via initBuiltins)
+// Eval VM & Builtins state (lazily initialised via initBuiltins)
 // ---------------------------------------------------------------------------
 
 /** The eval VM instance. Created once in initBuiltins(). */
 let jsEnv: CS.Puerts.ScriptEnv | null = null;
 
-/** Builtin helper module summaries, populated by initBuiltins(). */
+/** Builtins helper module summaries, populated by initBuiltins(). */
 export let builtinSummariesText: string = '';
 
 /**
@@ -29,12 +29,12 @@ function getJsEnv(): CS.Puerts.ScriptEnv {
 }
 
 // ---------------------------------------------------------------------------
-// Builtin initialisation via dynamic import()
+// Builtins initialisation via dynamic import()
 // ---------------------------------------------------------------------------
 
 /**
  * Initialise builtin helper modules by discovering `.mjs` assets under
- * `<resourceRoot>/builtin/` and dynamically importing each one in the
+ * `<resourceRoot>/builtins/` and dynamically importing each one in the
  * eval VM to extract its `summary` export.
  *
  * Dynamic import() supports top-level await inside the builtin modules.
@@ -45,15 +45,15 @@ function getJsEnv(): CS.Puerts.ScriptEnv {
 export async function initBuiltins(): Promise<void> {
     const root = getResourceRoot();
     if (!root) {
-        console.warn('[EvalTool] Resource root not set, skipping builtin loading.');
+        console.warn('[EvalTool] Resource root not set, skipping builtins loading.');
         return;
     }
 
     const env = getJsEnv();
-    const builtinPath = `${root}/builtin`;
+    const builtinPath = `${root}/builtins`;
     const assets = CS.UnityEngine.Resources.LoadAll(builtinPath, puer.$typeof(CS.UnityEngine.TextAsset));
     if (!assets || assets.Length === 0) {
-        console.log(`[EvalTool] No builtin assets found at Resources/${builtinPath}/`);
+        console.log(`[EvalTool] No builtins assets found at Resources/${builtinPath}/`);
         return;
     }
 
@@ -90,12 +90,12 @@ export async function initBuiltins(): Promise<void> {
     const summaries: string[] = [];
     for (const entry of results) {
         if (entry.error) {
-            console.warn(`[EvalTool] Failed to load builtin module '${entry.specifier}': ${entry.error}`);
+            console.warn(`[EvalTool] Failed to load builtins module '${entry.specifier}': ${entry.error}`);
         } else {
             if (entry.summary) {
                 summaries.push(entry.summary);
             }
-            console.log(`[EvalTool] Loaded builtin module '${entry.specifier}'.`);
+            console.log(`[EvalTool] Loaded builtins module '${entry.specifier}'.`);
         }
     }
 
@@ -125,7 +125,7 @@ export async function initBuiltins(): Promise<void> {
           summaries.join('\n\n')
         : '';
 
-    console.log(`[EvalTool] Loaded ${summaries.length} builtin summary(s).`);
+    console.log(`[EvalTool] Loaded ${summaries.length} builtins summary(s).`);
 }
 
 // ---------------------------------------------------------------------------
