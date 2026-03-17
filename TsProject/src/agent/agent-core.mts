@@ -220,7 +220,7 @@ function handlePrepareStep({ messages, stepNumber, steps }: any): any {
     // We fire on that step to inject the stop message and disable tools; the model
     // will then produce a pure-text response, and the do-while loop exits naturally
     // because there are no further tool calls.
-    const isLastStep = stepNumber >= MAX_STEPS - 1;
+    const isLastStep = stepNumber >= MAX_STEPS;
 
     // ---- Diagnostic: log message identities to check if AI SDK rebuilds them ----
     const lastFew = messages.slice(-3).map((m: any, i: number) => {
@@ -233,8 +233,82 @@ function handlePrepareStep({ messages, stepNumber, steps }: any): any {
     console.log(`[Agent] prepareStep(${stepNumber}): ${messages.length} msgs, last3=[${lastFew.join(' | ')}]`);
 
     let newMessages = messages;
+    let disableTools = false;
 
-    // ---- (1) Sliding window: check actual token usage from last step ----
+    // ---- (1) Extract screenshot images from the last tool message ----
+    const lastMsg = newMessages[newMessages.length - 1];
+    if (lastMsg && lastMsg.role === 'tool') {
+        const imageParts: Array<any> = [];
+        const patchedContent: any[] = [];
+
+        for (const part of lastMsg.content as any[]) {
+            if (
+                part.type === 'tool-result' &&
+                part.output?.type === 'content' &&
+                Array.isArray(part.output.value)
+            ) {
+                const textItems: any[] = [];
+                for (const item of part.output.value) {
+                    if (item.type === 'file-data' && item.mediaType?.startsWith('image/')) {
+                        imageParts.push({
+                            type: 'image' as const,
+                            image: item.data,
+                            mediaType: item.mediaType,
+                        });
+                    } else {
+                        textItems.push(item);
+                    }
+                }
+
+                if (imageParts.length > 0) {
+                    patchedContent.push({
+                        ...part,
+                        output: textItems.length > 0
+                            ? { type: 'content' as const, value: textItems }
+                            : { type: 'text' as const, value: textItems.map((t: any) => t.text || '').join('\n') || 'Screenshot captured.' },
+                    });
+                } else {
+                    patchedContent.push(part);
+                }
+            } else {
+                patchedContent.push(part);
+            }
+        }
+
+        if (imageParts.length > 0) {
+            console.log(`[Agent] prepareStep(${stepNumber}): injecting ${imageParts.length} screenshot image(s) as user message`);
+            // Mutate the tool message in-place so the AI SDK's internal reference
+            // is also updated, preventing the same base64 from reappearing in later steps.
+            lastMsg.content = patchedContent; // 删除了原有的工具里的base64
+            newMessages.push({
+                role: 'user',
+                content: [
+                    ...imageParts,
+                    {
+                        type: 'text' as const,
+                        text: 'Above is the screenshot I just captured. Please analyze it and respond to my earlier request.',
+                    },
+                ],
+            } as any);// 由于handlePrepareStep传入下消息是由const stepInputMessages = [...initialMessages, ...responseMessages];拼接出来的，所有这里并不会影响到initialMessages，responseMessages
+            // 发完就没有了
+            // 所以截图工具的base64不会被压缩
+        }
+    }
+
+    // ---- (2) If last step, inject max-steps message and mark tools for disabling ----
+    if (isLastStep) {
+        console.log(`[Agent] prepareStep(${stepNumber}): MAX_STEPS reached, injecting stop message and disabling tools.`);
+        newMessages = newMessages === messages ? [...messages] : newMessages;
+        newMessages.push({
+            role: 'user' as const,
+            content: MAX_STEPS_MESSAGE,
+        });
+        disableTools = true;
+    }
+
+    // ---- (3) Sliding window: check token budget AFTER all message injections ----
+    // This ensures that any messages added above (screenshots, max-steps) are
+    // included in the token budget check.
     if (ENABLE_SLIDING_WINDOW) {
         // 工具的调用过程中也可能产生token超标的情况，如果超了，会prune，还超就emergency trim，而prepareHistory是prune+compaction
         const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
@@ -273,92 +347,12 @@ function handlePrepareStep({ messages, stepNumber, steps }: any): any {
         }
     }
 
-    // ---- (2) Extract screenshot images from the last tool message ----
-    // If messages were modified (compressed in-place or trimmed), we need to
-    // return them. Trimming creates a new array, so check identity.
+    // ---- Return result ----
     const modified = newMessages !== messages;
-
-    const lastMsg = newMessages[newMessages.length - 1];
-    if (!lastMsg || lastMsg.role !== 'tool') {
-        // ---- (3) If last step, inject max-steps assistant message and disable tools ----
-        if (isLastStep) {
-            console.log(`[Agent] prepareStep(${stepNumber}): MAX_STEPS reached, injecting stop message and disabling tools.`);
-            newMessages = [...(modified ? newMessages : messages), {
-                role: 'user' as const,
-                content: MAX_STEPS_MESSAGE,
-            }];
-            return { messages: newMessages, tools: {} };
-        }
-        return modified ? { messages: newMessages } : undefined;
-    }
-
-    const imageParts: Array<any> = [];
-    const patchedContent: any[] = [];
-
-    for (const part of lastMsg.content as any[]) {
-        if (
-            part.type === 'tool-result' &&
-            part.output?.type === 'content' &&
-            Array.isArray(part.output.value)
-        ) {
-            const textItems: any[] = [];
-            for (const item of part.output.value) {
-                if (item.type === 'file-data' && item.mediaType?.startsWith('image/')) {
-                    imageParts.push({
-                        type: 'image' as const,
-                        image: item.data,
-                        mediaType: item.mediaType,
-                    });
-                } else {
-                    textItems.push(item);
-                }
-            }
-
-            if (imageParts.length > 0) {
-                patchedContent.push({
-                    ...part,
-                    output: textItems.length > 0
-                        ? { type: 'content' as const, value: textItems }
-                        : { type: 'text' as const, value: textItems.map((t: any) => t.text || '').join('\n') || 'Screenshot captured.' },
-                });
-            } else {
-                patchedContent.push(part);
-            }
-        } else {
-            patchedContent.push(part);
-        }
-    }
-
-    if (imageParts.length > 0) {
-        console.log(`[Agent] prepareStep(${stepNumber}): injecting ${imageParts.length} screenshot image(s) as user message`);
-        // Mutate the tool message in-place so the AI SDK's internal reference
-        // is also updated, preventing the same base64 from reappearing in later steps.
-        lastMsg.content = patchedContent; // 删除了原有的工具里的base64
-        newMessages.push({
-            role: 'user',
-            content: [
-                ...imageParts,
-                {
-                    type: 'text' as const,
-                    text: 'Above is the screenshot I just captured. Please analyze it and respond to my earlier request.',
-                },
-            ],
-        } as any);// 由于handlePrepareStep传入下消息是由const stepInputMessages = [...initialMessages, ...responseMessages];拼接出来的，所有这里并不会影响到initialMessages，responseMessages
-        // 发完就没有了
-        // 所以截图工具的base64不会被压缩
-    }
-
-    // ---- (3) If last step, inject max-steps assistant message and disable tools ----
-    if (isLastStep) {
-        console.log(`[Agent] prepareStep(${stepNumber}): MAX_STEPS reached, injecting stop message and disabling tools.`);
-        newMessages = [...newMessages, {
-            role: 'user' as const,
-            content: MAX_STEPS_MESSAGE,
-        }];
+    if (disableTools) {
         return { messages: newMessages, tools: {} };
     }
-
-    return modified || imageParts.length > 0 ? { messages: newMessages } : undefined;
+    return modified ? { messages: newMessages } : undefined;
 }
 
 

@@ -39737,7 +39737,7 @@ function handleStepFinish(onProgress, { stepNumber, text: text2, toolCalls, tool
 __name(handleStepFinish, "handleStepFinish");
 function handlePrepareStep({ messages, stepNumber, steps }) {
   if (stepNumber === 0) return void 0;
-  const isLastStep = stepNumber >= MAX_STEPS - 1;
+  const isLastStep = stepNumber >= MAX_STEPS;
   const lastFew = messages.slice(-3).map((m2, i2) => {
     const role = m2.role || "?";
     const contentPreview = typeof m2.content === "string" ? m2.content.substring(0, 40) : Array.isArray(m2.content) ? `[${m2.content.length} parts]` : "?";
@@ -39745,6 +39745,61 @@ function handlePrepareStep({ messages, stepNumber, steps }) {
   });
   console.log(`[Agent] prepareStep(${stepNumber}): ${messages.length} msgs, last3=[${lastFew.join(" | ")}]`);
   let newMessages = messages;
+  let disableTools = false;
+  const lastMsg = newMessages[newMessages.length - 1];
+  if (lastMsg && lastMsg.role === "tool") {
+    const imageParts = [];
+    const patchedContent = [];
+    for (const part of lastMsg.content) {
+      if (part.type === "tool-result" && part.output?.type === "content" && Array.isArray(part.output.value)) {
+        const textItems = [];
+        for (const item of part.output.value) {
+          if (item.type === "file-data" && item.mediaType?.startsWith("image/")) {
+            imageParts.push({
+              type: "image",
+              image: item.data,
+              mediaType: item.mediaType
+            });
+          } else {
+            textItems.push(item);
+          }
+        }
+        if (imageParts.length > 0) {
+          patchedContent.push({
+            ...part,
+            output: textItems.length > 0 ? { type: "content", value: textItems } : { type: "text", value: textItems.map((t2) => t2.text || "").join("\n") || "Screenshot captured." }
+          });
+        } else {
+          patchedContent.push(part);
+        }
+      } else {
+        patchedContent.push(part);
+      }
+    }
+    if (imageParts.length > 0) {
+      console.log(`[Agent] prepareStep(${stepNumber}): injecting ${imageParts.length} screenshot image(s) as user message`);
+      lastMsg.content = patchedContent;
+      newMessages.push({
+        role: "user",
+        content: [
+          ...imageParts,
+          {
+            type: "text",
+            text: "Above is the screenshot I just captured. Please analyze it and respond to my earlier request."
+          }
+        ]
+      });
+    }
+  }
+  if (isLastStep) {
+    console.log(`[Agent] prepareStep(${stepNumber}): MAX_STEPS reached, injecting stop message and disabling tools.`);
+    newMessages = newMessages === messages ? [...messages] : newMessages;
+    newMessages.push({
+      role: "user",
+      content: MAX_STEPS_MESSAGE
+    });
+    disableTools = true;
+  }
   if (ENABLE_SLIDING_WINDOW) {
     const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
     const lastInputTokens = lastStep?.usage?.inputTokens;
@@ -39775,69 +39830,10 @@ ${summary}`
     }
   }
   const modified = newMessages !== messages;
-  const lastMsg = newMessages[newMessages.length - 1];
-  if (!lastMsg || lastMsg.role !== "tool") {
-    if (isLastStep) {
-      console.log(`[Agent] prepareStep(${stepNumber}): MAX_STEPS reached, injecting stop message and disabling tools.`);
-      newMessages = [...modified ? newMessages : messages, {
-        role: "user",
-        content: MAX_STEPS_MESSAGE
-      }];
-      return { messages: newMessages, tools: {} };
-    }
-    return modified ? { messages: newMessages } : void 0;
-  }
-  const imageParts = [];
-  const patchedContent = [];
-  for (const part of lastMsg.content) {
-    if (part.type === "tool-result" && part.output?.type === "content" && Array.isArray(part.output.value)) {
-      const textItems = [];
-      for (const item of part.output.value) {
-        if (item.type === "file-data" && item.mediaType?.startsWith("image/")) {
-          imageParts.push({
-            type: "image",
-            image: item.data,
-            mediaType: item.mediaType
-          });
-        } else {
-          textItems.push(item);
-        }
-      }
-      if (imageParts.length > 0) {
-        patchedContent.push({
-          ...part,
-          output: textItems.length > 0 ? { type: "content", value: textItems } : { type: "text", value: textItems.map((t2) => t2.text || "").join("\n") || "Screenshot captured." }
-        });
-      } else {
-        patchedContent.push(part);
-      }
-    } else {
-      patchedContent.push(part);
-    }
-  }
-  if (imageParts.length > 0) {
-    console.log(`[Agent] prepareStep(${stepNumber}): injecting ${imageParts.length} screenshot image(s) as user message`);
-    lastMsg.content = patchedContent;
-    newMessages.push({
-      role: "user",
-      content: [
-        ...imageParts,
-        {
-          type: "text",
-          text: "Above is the screenshot I just captured. Please analyze it and respond to my earlier request."
-        }
-      ]
-    });
-  }
-  if (isLastStep) {
-    console.log(`[Agent] prepareStep(${stepNumber}): MAX_STEPS reached, injecting stop message and disabling tools.`);
-    newMessages = [...newMessages, {
-      role: "user",
-      content: MAX_STEPS_MESSAGE
-    }];
+  if (disableTools) {
     return { messages: newMessages, tools: {} };
   }
-  return modified || imageParts.length > 0 ? { messages: newMessages } : void 0;
+  return modified ? { messages: newMessages } : void 0;
 }
 __name(handlePrepareStep, "handlePrepareStep");
 async function prepareHistory() {
