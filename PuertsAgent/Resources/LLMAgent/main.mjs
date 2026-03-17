@@ -39318,50 +39318,23 @@ function createRetrieveImageTool() {
 }
 __name(createRetrieveImageTool, "createRetrieveImageTool");
 
-// src/agent/agent-core.mts
-var currentAbortController = null;
+// src/agent/compaction.mts
 var ENABLE_SLIDING_WINDOW = true;
 var CHARS_PER_TOKEN = 4;
 var MAX_INPUT_TOKENS = 6e5;
 var MIN_KEEP_MESSAGES = 6;
-var MAX_STEPS = 25;
-var STEP_LIMIT_PREFIX = "[STEP_LIMIT_REACHED]";
 var SUMMARY_MAX_CHARS = 4e3;
 var PRUNE_MINIMUM = 2e4;
 var PRUNE_PROTECT = 4e4;
-var DEFAULT_CONFIG = {
-  apiKey: "",
-  model: "gpt-4o-mini"
-};
-var conversationHistory = [];
-var currentConfig = { ...DEFAULT_CONFIG };
-var isConfigured = false;
 var historySummary = null;
-function isToolResultSuccess(output) {
-  if (output != null && typeof output === "object" && "success" in output) {
-    return !!output.success;
-  }
-  if (typeof output === "string") {
-    const lower = output.toLowerCase();
-    if (lower.includes("failed") || lower.includes("error")) {
-      return false;
-    }
-  }
-  return true;
+function getHistorySummary() {
+  return historySummary;
 }
-__name(isToolResultSuccess, "isToolResultSuccess");
-function extractToolErrorMessage(output) {
-  if (output != null && typeof output === "object") {
-    const obj = output;
-    if (obj.error) return String(obj.error);
-    if (obj.message) return String(obj.message);
-  }
-  if (typeof output === "string") {
-    return output.length > 200 ? output.substring(0, 200) + "..." : output;
-  }
-  return "Unknown error";
+__name(getHistorySummary, "getHistorySummary");
+function resetHistorySummary() {
+  historySummary = null;
 }
-__name(extractToolErrorMessage, "extractToolErrorMessage");
+__name(resetHistorySummary, "resetHistorySummary");
 function estimateTokens(messages) {
   let totalChars = 0;
   for (const msg of messages) {
@@ -39489,14 +39462,13 @@ function buildCompactionInput(messages) {
   return text2;
 }
 __name(buildCompactionInput, "buildCompactionInput");
-async function compactMessages(messages) {
-  if (!isConfigured || !currentConfig.apiKey) return null;
+async function compactMessages(messages, config2) {
   try {
     const provider = createOpenAI({
-      apiKey: currentConfig.apiKey,
-      baseURL: currentConfig.baseURL
+      apiKey: config2.apiKey,
+      baseURL: config2.baseURL
     });
-    const modelId = currentConfig.summaryModel || currentConfig.model || "gpt-4o-mini";
+    const modelId = config2.summaryModel || config2.model || "gpt-4o-mini";
     const model = provider.chat(modelId);
     const conversationText = buildCompactionInput(messages);
     const result = await generateText({
@@ -39516,7 +39488,7 @@ async function compactMessages(messages) {
   return null;
 }
 __name(compactMessages, "compactMessages");
-async function trimMessagesByTokenBudget(messages, tokenBudget) {
+async function trimMessagesByTokenBudget(messages, tokenBudget, config2) {
   let estimated = estimateTokens(messages);
   if (estimated <= tokenBudget) {
     return { messages, trimmed: false };
@@ -39548,7 +39520,7 @@ async function trimMessagesByTokenBudget(messages, tokenBudget) {
   if (removedMessages.length > 0) {
     const toCompact = historySummary ? [{ role: "user", content: `[Previous compaction summary]:
 ${historySummary}` }, ...removedMessages] : removedMessages;
-    const summary = await compactMessages(toCompact);
+    const summary = await compactMessages(toCompact, config2);
     if (summary) {
       historySummary = summary;
       summaryMsg = {
@@ -39562,6 +39534,43 @@ ${summary}`
   return { messages: result, trimmed: true };
 }
 __name(trimMessagesByTokenBudget, "trimMessagesByTokenBudget");
+
+// src/agent/agent-core.mts
+var currentAbortController = null;
+var MAX_STEPS = 25;
+var STEP_LIMIT_PREFIX = "[STEP_LIMIT_REACHED]";
+var DEFAULT_CONFIG = {
+  apiKey: "",
+  model: "gpt-4o-mini"
+};
+var conversationHistory = [];
+var currentConfig = { ...DEFAULT_CONFIG };
+var isConfigured = false;
+function isToolResultSuccess(output) {
+  if (output != null && typeof output === "object" && "success" in output) {
+    return !!output.success;
+  }
+  if (typeof output === "string") {
+    const lower = output.toLowerCase();
+    if (lower.includes("failed") || lower.includes("error")) {
+      return false;
+    }
+  }
+  return true;
+}
+__name(isToolResultSuccess, "isToolResultSuccess");
+function extractToolErrorMessage(output) {
+  if (output != null && typeof output === "object") {
+    const obj = output;
+    if (obj.error) return String(obj.error);
+    if (obj.message) return String(obj.message);
+  }
+  if (typeof output === "string") {
+    return output.length > 200 ? output.substring(0, 200) + "..." : output;
+  }
+  return "Unknown error";
+}
+__name(extractToolErrorMessage, "extractToolErrorMessage");
 function configure(config2) {
   currentConfig = { ...DEFAULT_CONFIG, ...config2 };
   if (!currentConfig.apiKey) {
@@ -39646,11 +39655,12 @@ function handlePrepareStep({ messages, stepNumber, steps }) {
         console.log(`[Agent] prepareStep(${stepNumber}): still ${afterPrune} tokens after pruning, emergency trim...`);
         const keep = Math.min(MIN_KEEP_MESSAGES, newMessages.length);
         const trimmedMsgs = newMessages.slice(newMessages.length - keep);
-        if (historySummary) {
+        const summary = getHistorySummary();
+        if (summary) {
           trimmedMsgs.unshift({
             role: "user",
             content: `[Compacted Context \u2014 this is a structured summary of earlier conversation that was compacted to save context space]:
-${historySummary}`
+${summary}`
           });
         }
         newMessages = trimmedMsgs;
@@ -39718,7 +39728,8 @@ async function prepareHistory() {
     if (estimated > MAX_INPUT_TOKENS) {
       const { messages: trimmed, trimmed: didTrim } = await trimMessagesByTokenBudget(
         conversationHistory,
-        MAX_INPUT_TOKENS
+        MAX_INPUT_TOKENS,
+        currentConfig
       );
       if (didTrim) {
         conversationHistory = trimmed;
@@ -39821,7 +39832,7 @@ __name(abortGeneration, "abortGeneration");
 function clearHistory() {
   conversationHistory = [];
   imageStore.clear();
-  historySummary = null;
+  resetHistorySummary();
   console.log("[Agent] Conversation history cleared.");
 }
 __name(clearHistory, "clearHistory");
