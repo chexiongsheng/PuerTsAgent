@@ -216,7 +216,7 @@ function handlePrepareStep({ messages, stepNumber, steps }: any): any {
 
     // ---- Max steps: inject assistant message and remove tools on last step ----
     // stepNumber is 0-indexed and prepareStep runs at the *start* of each step,
-    // so the maximum stepNumber we ever see is MAX_STEPS-1 (for the last tool step).
+    // so the maximum stepNumber we ever see is MAX_STEPS.
     // We fire on that step to inject the stop message and disable tools; the model
     // will then produce a pure-text response, and the do-while loop exits naturally
     // because there are no further tool calls.
