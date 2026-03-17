@@ -134,19 +134,30 @@ export async function initBuiltins(): Promise<void> {
 
 // Fixed runner code that calls the globally defined execute() function,
 // handles async result serialization and error reporting via onFinish callback.
+// If the return value is an object containing an `__image` marker (used by the
+// screenshot builtin), the image data is extracted and sent separately so that
+// the eval tool's toModelOutput can convert it into multi-modal content.
 const RUNNER_CODE = `(function(onFinish) {
     execute().then(function(result) {
         var resultStr;
+        var imageData = null;
         if (result === undefined) {
             resultStr = '(no return value)';
         } else if (result === null) {
             resultStr = 'null';
         } else if (typeof result === 'object') {
-            try { resultStr = JSON.stringify(result, null, 2); } catch(e) { resultStr = String(result); }
+            if (result.__image && result.__image.base64) {
+                imageData = { base64: result.__image.base64, mediaType: result.__image.mediaType || 'image/png' };
+                var copy = {};
+                for (var k in result) { if (k !== '__image') copy[k] = result[k]; }
+                try { resultStr = JSON.stringify(copy, null, 2); } catch(e) { resultStr = String(result); }
+            } else {
+                try { resultStr = JSON.stringify(result, null, 2); } catch(e) { resultStr = String(result); }
+            }
         } else {
             resultStr = String(result);
         }
-        onFinish.Invoke(JSON.stringify({ __error: false, result: resultStr }));
+        onFinish.Invoke(JSON.stringify({ __error: false, result: resultStr, __image: imageData }));
     }).catch(function(err) {
         onFinish.Invoke(JSON.stringify({ __error: true, message: String(err.message || err), stack: String(err.stack || '') }));
     });
@@ -222,10 +233,16 @@ export function createEvalTools() {
                         };
                     }
 
-                    return {
+                    // If the runner extracted image data, include it in the output
+                    // so that toModelOutput can convert it to multi-modal content.
+                    const output: any = {
                         success: true,
                         result: parsed.result,
                     };
+                    if (parsed.__image) {
+                        output.__image = parsed.__image;
+                    }
+                    return output;
                 } catch (error: any) {
                     const errorMsg = error.message || String(error);
                     const stack = error.stack || '';
@@ -235,6 +252,35 @@ export function createEvalTools() {
                         stack: stack,
                     };
                 }
+            },
+            // Convert eval output to model-friendly content.
+            // When the executed code returns an object with an __image marker
+            // (e.g. from the screenshot builtin), the image is included as
+            // file-data so that handlePrepareStep can extract it and inject
+            // it as a user-message image part for the LLM to see.
+            toModelOutput({ output }: { output: any }) {
+                const textContent = output.success
+                    ? output.result
+                    : `Error: ${output.error}${output.stack ? '\nStack: ' + output.stack : ''}`;
+
+                if (output.success && output.__image) {
+                    return {
+                        type: 'content' as const,
+                        value: [
+                            { type: 'text' as const, text: textContent },
+                            {
+                                type: 'file-data' as const,
+                                data: output.__image.base64,
+                                mediaType: output.__image.mediaType || 'image/png',
+                            },
+                        ],
+                    };
+                }
+
+                return {
+                    type: 'text' as const,
+                    value: textContent,
+                };
             },
         }),
     };

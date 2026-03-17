@@ -38801,159 +38801,6 @@ function createOpenAI(options = {}) {
 __name(createOpenAI, "createOpenAI");
 var openai = createOpenAI();
 
-// src/tools/screenshot-tool.mts
-function createScreenshotTools() {
-  return {
-    /**
-     * Capture the current Unity game screen.
-     */
-    captureScreenshot: tool({
-      description: "Capture a screenshot of the current Unity game view (Game window). Returns a PNG image of the screen that you can visually analyze. Use this tool when you need to see what is currently displayed in the game, diagnose visual issues, check UI layout, or analyze the game state visually. The image will be resized to fit within the specified max dimensions to reduce token usage.",
-      inputSchema: external_exports.object({
-        maxWidth: external_exports.number().int().min(64).max(1920).default(512).describe(
-          "Maximum width of the captured image in pixels (64-1920, default 512). Lower values reduce token cost but also reduce detail."
-        ),
-        maxHeight: external_exports.number().int().min(64).max(1080).default(512).describe(
-          "Maximum height of the captured image in pixels (64-1080, default 512). Lower values reduce token cost but also reduce detail."
-        )
-      }),
-      execute: /* @__PURE__ */ __name(async ({ maxWidth, maxHeight }) => {
-        try {
-          const resultJson = await captureScreenPromise(maxWidth, maxHeight);
-          const result = JSON.parse(resultJson);
-          if (!result.success) {
-            return {
-              success: false,
-              message: `Screenshot capture failed: ${result.error || "Unknown error"}`
-            };
-          }
-          return {
-            success: true,
-            message: `Game view screenshot captured successfully (${result.width}x${result.height}).`,
-            base64: result.base64,
-            width: result.width,
-            height: result.height
-          };
-        } catch (error48) {
-          return {
-            success: false,
-            message: `Screenshot capture failed: ${error48.message || error48}`
-          };
-        }
-      }, "execute"),
-      // Return multi-modal content with the image as file-data.
-      // The Chat Completions API only supports images in user messages,
-      // so handlePrepareStep in agent-core will extract the image from
-      // this tool result and re-inject it as a user message.
-      toModelOutput({ output: result }) {
-        if (!result.success || !result.base64) {
-          return { type: "content", value: [{ type: "text", text: result.message }] };
-        }
-        return {
-          type: "content",
-          value: [
-            { type: "text", text: result.message },
-            {
-              type: "file-data",
-              data: result.base64,
-              mediaType: "image/png"
-            }
-          ]
-        };
-      }
-    }),
-    /**
-     * Capture the Unity Scene view (Editor only).
-     */
-    captureSceneView: tool({
-      description: "Capture a screenshot of the Unity Scene view window (Editor only). Returns a PNG image showing the current Scene view with its camera angle, gizmos, and editor overlays. Use this tool when you need to inspect the scene layout, check object positions/transforms, debug spatial relationships, or analyze the scene from the editor perspective. This is different from captureScreenshot which captures the Game view. The image will be resized to fit within the specified max dimensions.",
-      inputSchema: external_exports.object({
-        maxWidth: external_exports.number().int().min(64).max(1920).default(512).describe(
-          "Maximum width of the captured image in pixels (64-1920, default 512). Lower values reduce token cost but also reduce detail."
-        ),
-        maxHeight: external_exports.number().int().min(64).max(1080).default(512).describe(
-          "Maximum height of the captured image in pixels (64-1080, default 512). Lower values reduce token cost but also reduce detail."
-        )
-      }),
-      execute: /* @__PURE__ */ __name(async ({ maxWidth, maxHeight }) => {
-        try {
-          const resultJson = await captureSceneViewPromise(maxWidth, maxHeight);
-          const result = JSON.parse(resultJson);
-          if (!result.success) {
-            return {
-              success: false,
-              message: `Scene view capture failed: ${result.error || "Unknown error"}`
-            };
-          }
-          return {
-            success: true,
-            message: `Scene view screenshot captured successfully (${result.width}x${result.height}).`,
-            base64: result.base64,
-            width: result.width,
-            height: result.height
-          };
-        } catch (error48) {
-          return {
-            success: false,
-            message: `Scene view capture failed: ${error48.message || error48}`
-          };
-        }
-      }, "execute"),
-      // Same multi-modal output as captureScreenshot.
-      // handlePrepareStep will extract the image and inject as user message.
-      toModelOutput({ output: result }) {
-        if (!result.success || !result.base64) {
-          return { type: "content", value: [{ type: "text", text: result.message }] };
-        }
-        return {
-          type: "content",
-          value: [
-            { type: "text", text: result.message },
-            {
-              type: "file-data",
-              data: result.base64,
-              mediaType: "image/png"
-            }
-          ]
-        };
-      }
-    })
-  };
-}
-__name(createScreenshotTools, "createScreenshotTools");
-function captureScreenPromise(maxWidth, maxHeight) {
-  return new Promise((resolve2, reject) => {
-    try {
-      CS.LLMAgent.ScreenCaptureBridge.CaptureScreenAsync(
-        maxWidth,
-        maxHeight,
-        (resultJson) => {
-          resolve2(resultJson);
-        }
-      );
-    } catch (error48) {
-      reject(error48);
-    }
-  });
-}
-__name(captureScreenPromise, "captureScreenPromise");
-function captureSceneViewPromise(maxWidth, maxHeight) {
-  return new Promise((resolve2, reject) => {
-    try {
-      CS.LLMAgent.ScreenCaptureBridge.CaptureSceneViewAsync(
-        maxWidth,
-        maxHeight,
-        (resultJson) => {
-          resolve2(resultJson);
-        }
-      );
-    } catch (error48) {
-      reject(error48);
-    }
-  });
-}
-__name(captureSceneViewPromise, "captureSceneViewPromise");
-
 // src/resource-root.mts
 var resourceRoot = null;
 function setResourceRoot(root) {
@@ -39059,16 +38906,24 @@ __name(initBuiltins, "initBuiltins");
 var RUNNER_CODE = `(function(onFinish) {
     execute().then(function(result) {
         var resultStr;
+        var imageData = null;
         if (result === undefined) {
             resultStr = '(no return value)';
         } else if (result === null) {
             resultStr = 'null';
         } else if (typeof result === 'object') {
-            try { resultStr = JSON.stringify(result, null, 2); } catch(e) { resultStr = String(result); }
+            if (result.__image && result.__image.base64) {
+                imageData = { base64: result.__image.base64, mediaType: result.__image.mediaType || 'image/png' };
+                var copy = {};
+                for (var k in result) { if (k !== '__image') copy[k] = result[k]; }
+                try { resultStr = JSON.stringify(copy, null, 2); } catch(e) { resultStr = String(result); }
+            } else {
+                try { resultStr = JSON.stringify(result, null, 2); } catch(e) { resultStr = String(result); }
+            }
         } else {
             resultStr = String(result);
         }
-        onFinish.Invoke(JSON.stringify({ __error: false, result: resultStr }));
+        onFinish.Invoke(JSON.stringify({ __error: false, result: resultStr, __image: imageData }));
     }).catch(function(err) {
         onFinish.Invoke(JSON.stringify({ __error: true, message: String(err.message || err), stack: String(err.stack || '') }));
     });
@@ -39110,10 +38965,14 @@ ${code}`);
               stack: parsed.stack || ""
             };
           }
-          return {
+          const output = {
             success: true,
             result: parsed.result
           };
+          if (parsed.__image) {
+            output.__image = parsed.__image;
+          }
+          return output;
         } catch (error48) {
           const errorMsg = error48.message || String(error48);
           const stack = error48.stack || "";
@@ -39123,7 +38982,32 @@ ${code}`);
             stack
           };
         }
-      }, "execute")
+      }, "execute"),
+      // Convert eval output to model-friendly content.
+      // When the executed code returns an object with an __image marker
+      // (e.g. from the screenshot builtin), the image is included as
+      // file-data so that handlePrepareStep can extract it and inject
+      // it as a user-message image part for the LLM to see.
+      toModelOutput({ output }) {
+        const textContent = output.success ? output.result : `Error: ${output.error}${output.stack ? "\nStack: " + output.stack : ""}`;
+        if (output.success && output.__image) {
+          return {
+            type: "content",
+            value: [
+              { type: "text", text: textContent },
+              {
+                type: "file-data",
+                data: output.__image.base64,
+                mediaType: output.__image.mediaType || "image/png"
+              }
+            ]
+          };
+        }
+        return {
+          type: "text",
+          value: textContent
+        };
+      }
     })
   };
 }
@@ -39688,7 +39572,6 @@ function configure(config2) {
 __name(configure, "configure");
 function createToolSet() {
   return {
-    ...createScreenshotTools(),
     ...createEvalTools(),
     ...createRetrieveImageTool(),
     ...createSkillTools()

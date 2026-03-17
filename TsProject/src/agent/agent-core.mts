@@ -5,7 +5,6 @@
 import { generateText, stepCountIs, type ModelMessage } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 
-import { createScreenshotTools } from '../tools/screenshot-tool.mjs';
 import { createEvalTools } from '../tools/eval-tool.mjs';
 import { createSkillTools } from '../tools/skill-tool.mjs';
 import { buildSystemPrompt } from './prompt.mjs';
@@ -149,7 +148,6 @@ export function configure(config: Partial<AgentConfig>): string {
  */
 function createToolSet() {
     return {
-        ...createScreenshotTools(),
         ...createEvalTools(),
         ...createRetrieveImageTool(),
         ...createSkillTools(),
