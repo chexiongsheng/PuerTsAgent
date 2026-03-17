@@ -31,12 +31,12 @@ namespace LLMAgent
         /// extract the exported "summary" from each module, and return them.
         /// The summaries are short descriptions shown in the tool context;
         /// full descriptions are available via dynamic import at runtime.
-/// The modules are loaded from Resources/LLMAgent/editor-assistant/builtin/ folder.
+        /// The modules are loaded from Resources/LLMAgent/editor-assistant/builtin/ folder.
         /// </summary>
         [UnityEngine.Scripting.Preserve]
         public static string[] LoadBuiltinModules(ScriptEnv env)
         {
-var assets = Resources.LoadAll<TextAsset>("LLMAgent/editor-assistant/builtin");
+            var assets = Resources.LoadAll<TextAsset>("LLMAgent/editor-assistant/builtin");
             if (assets == null || assets.Length == 0)
                 return new string[0];
 
@@ -44,7 +44,7 @@ var assets = Resources.LoadAll<TextAsset>("LLMAgent/editor-assistant/builtin");
             foreach (var asset in assets)
             {
                 var moduleName = asset.name; // e.g. "unity-log"
-var specifier = "LLMAgent/editor-assistant/builtin/" + moduleName + ".mjs";
+                var specifier = "LLMAgent/editor-assistant/builtin/" + moduleName + ".mjs";
                 try
                 {
                     var moduleExports = env.ExecuteModule(specifier);
