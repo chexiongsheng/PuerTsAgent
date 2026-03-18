@@ -471,6 +471,14 @@
             public static LoadBuiltinModules ($env: Puerts.ScriptEnv) : System.Array$1<string>
             public constructor ()
         }
+        class MazePlayerBridge extends System.Object
+        {
+            protected [__keep_incompatibility]: never;
+            public static MoveDirection ($direction: string, $distance: number, $callback: System.Action$1<string>) : void
+            public static MoveSequence ($directionsJson: string, $distance: number, $callback: System.Action$1<string>) : void
+            public static MoveSequenceV2 ($directionsJson: string, $distancesJson: string, $callback: System.Action$1<string>) : void
+            public static GetPlayerStatus ($callback: System.Action$1<string>) : void
+        }
     }
     namespace System.Collections.Generic {
         interface IEnumerable$1<T> extends System.Collections.IEnumerable

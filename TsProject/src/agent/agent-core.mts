@@ -31,8 +31,11 @@ let currentAbortController: AbortController | null = null;
  * Maximum number of tool-call steps allowed per generateText invocation.
  * When this limit is reached, the agent is forced to produce a text-only
  * summary via an injected assistant message (à la opencode).
+ * A value of 0 or negative means unlimited (capped at 9999 internally).
  */
-const MAX_STEPS = 25;
+let MAX_STEPS = 25;
+
+const UNLIMITED_STEPS = 9999;
 
 /**
  * Injected as a fake assistant message on the last step to force the model
@@ -60,6 +63,9 @@ export interface AgentConfig {
     /** Optional: a cheaper / faster model ID used for summarizing trimmed history.
      *  If not set, the main model is used. */
     summaryModel?: string;
+    /** Maximum number of tool-call steps per generation.
+     *  0 or negative means unlimited. Default: 25. */
+    maxSteps?: number;
 }
 
 
@@ -132,9 +138,20 @@ export function configure(config: Partial<AgentConfig>): string {
         return '[Agent] Error: API key is required. Call configure({ apiKey: "your-key" }) first.';
     }
 
+    // Apply maxSteps configuration
+    if (config.maxSteps !== undefined) {
+        if (config.maxSteps <= 0) {
+            MAX_STEPS = UNLIMITED_STEPS;
+            console.log(`[Agent] maxSteps set to unlimited (${UNLIMITED_STEPS})`);
+        } else {
+            MAX_STEPS = config.maxSteps;
+            console.log(`[Agent] maxSteps set to ${MAX_STEPS}`);
+        }
+    }
+
     isConfigured = true;
     console.log(`[Agent] Configured with model: ${currentConfig.model}, baseURL: ${currentConfig.baseURL || 'default'}`);
-    return `[Agent] Configured successfully. Model: ${currentConfig.model}`;
+    return `[Agent] Configured successfully. Model: ${currentConfig.model}, maxSteps: ${MAX_STEPS === UNLIMITED_STEPS ? 'unlimited' : MAX_STEPS}`;
 }
 
 

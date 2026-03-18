@@ -33,12 +33,14 @@ console.log('[Agent] LLM Agent module loaded.');
 export function configureAgent(
     apiKey: string,
     baseURL: string,
-    model: string
+    model: string,
+    maxSteps: number = 0
 ): string {
     return configure({
         apiKey,
         baseURL: baseURL || undefined,
         model: model || undefined,
+        maxSteps: maxSteps,
     });
 }
 

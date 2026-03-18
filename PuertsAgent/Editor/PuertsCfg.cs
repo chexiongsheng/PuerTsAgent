@@ -27,6 +27,7 @@ namespace LLMAgent.Editor
                     typeof(LLMAgent.ScreenCaptureBridge),
                     typeof(LLMAgent.TypeReflectionBridge),
                     typeof(LLMAgent.ScriptEnvBridge),
+                    typeof(LLMAgent.MazePlayerBridge),
                     typeof(UnityEngine.Vector3),
                     typeof(UnityEngine.Resources),
                     typeof(UnityEngine.Object),

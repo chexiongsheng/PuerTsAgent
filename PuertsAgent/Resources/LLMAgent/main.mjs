@@ -39514,6 +39514,7 @@ __name(trimMessagesByTokenBudget, "trimMessagesByTokenBudget");
 // src/agent/agent-core.mts
 var currentAbortController = null;
 var MAX_STEPS = 25;
+var UNLIMITED_STEPS = 9999;
 var MAX_STEPS_MESSAGE = `CRITICAL - MAXIMUM STEPS REACHED
 
 The maximum number of steps allowed for this task has been reached. Tools are disabled. Respond with text only.
@@ -39565,9 +39566,18 @@ function configure(config2) {
     isConfigured = false;
     return '[Agent] Error: API key is required. Call configure({ apiKey: "your-key" }) first.';
   }
+  if (config2.maxSteps !== void 0) {
+    if (config2.maxSteps <= 0) {
+      MAX_STEPS = UNLIMITED_STEPS;
+      console.log(`[Agent] maxSteps set to unlimited (${UNLIMITED_STEPS})`);
+    } else {
+      MAX_STEPS = config2.maxSteps;
+      console.log(`[Agent] maxSteps set to ${MAX_STEPS}`);
+    }
+  }
   isConfigured = true;
   console.log(`[Agent] Configured with model: ${currentConfig.model}, baseURL: ${currentConfig.baseURL || "default"}`);
-  return `[Agent] Configured successfully. Model: ${currentConfig.model}`;
+  return `[Agent] Configured successfully. Model: ${currentConfig.model}, maxSteps: ${MAX_STEPS === UNLIMITED_STEPS ? "unlimited" : MAX_STEPS}`;
 }
 __name(configure, "configure");
 function createToolSet() {
@@ -39833,11 +39843,12 @@ __name(getIsConfigured, "getIsConfigured");
 console.log("[Agent] LLM Agent initialized.");
 CS.LLMAgent.UnityLogBridge.StartListening();
 console.log("[Agent] LLM Agent module loaded.");
-function configureAgent(apiKey, baseURL, model) {
+function configureAgent(apiKey, baseURL, model, maxSteps = 0) {
   return configure({
     apiKey,
     baseURL: baseURL || void 0,
-    model: model || void 0
+    model: model || void 0,
+    maxSteps
   });
 }
 __name(configureAgent, "configureAgent");

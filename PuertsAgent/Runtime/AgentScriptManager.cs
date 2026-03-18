@@ -21,7 +21,7 @@ namespace LLMAgent
         private bool isTicking;
 
         // TS function delegates
-        private Func<string, string, string, string> configureAgent;
+        private Func<string, string, string, int, string> configureAgent;
         private Action<string, string, string, Action<string, bool>, Action<string>> onMessageReceived;
         private Action onAbortGeneration;
         private Func<string, string> onMessageSync;
@@ -80,7 +80,7 @@ namespace LLMAgent
                 ScriptObject moduleExports = scriptEnv.ExecuteModule(EntryModule);
 
                 // Get exported functions from TS module
-                configureAgent = moduleExports.Get<Func<string, string, string, string>>("configureAgent");
+                configureAgent = moduleExports.Get<Func<string, string, string, int, string>>("configureAgent");
                 onMessageReceived = moduleExports.Get<Action<string, string, string, Action<string, bool>, Action<string>>>("onMessageReceived");
                 onAbortGeneration = moduleExports.Get<Action>("onAbortGeneration");
                 onMessageSync = moduleExports.Get<Func<string, string>>("onMessageSync");
@@ -173,7 +173,11 @@ namespace LLMAgent
         /// <summary>
         /// Configure the agent with API settings.
         /// </summary>
-        public string ConfigureAgent(string apiKey, string baseURL = "", string model = "")
+        /// <param name="apiKey">API key for the LLM service.</param>
+        /// <param name="baseURL">Optional base URL (empty for default).</param>
+        /// <param name="model">Optional model name (empty for default).</param>
+        /// <param name="maxSteps">Maximum tool-call steps per generation. 0 or negative = unlimited.</param>
+        public string ConfigureAgent(string apiKey, string baseURL = "", string model = "", int maxSteps = 0)
         {
             if (!isInitialized || configureAgent == null)
             {
@@ -182,7 +186,7 @@ namespace LLMAgent
 
             try
             {
-                return configureAgent(apiKey, baseURL, model);
+                return configureAgent(apiKey, baseURL, model, maxSteps);
             }
             catch (Exception ex)
             {
