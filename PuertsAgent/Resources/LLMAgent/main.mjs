@@ -38879,9 +38879,10 @@ Several helper modules are pre-loaded in the evalJsCode VM under the path prefix
 
 To use a module, load it via ESM dynamic \`import()\`.
 
-**IMPORTANT**: The summaries below describe what each module does, but intentionally do NOT list function names or signatures. You MUST first execute a script that reads the module's \`.description\` export to discover available functions and their correct parameter signatures. All functions validate their arguments at runtime and will throw errors if called with wrong parameters. NEVER guess or assume function names \u2014 always read \`.description\` first.
+**IMPORTANT**: On first use of a module, read its \`.description\` export to see detailed function signatures. After that, you already know the API \u2014 just call functions directly without re-reading \`.description\`.
+All functions validate their arguments at runtime and will throw errors if called with wrong parameters.
 
-Step 1 \u2014 Read description (first-time only):
+First-time usage \u2014 read description:
 \`\`\`
 async function execute() {
     const sv = await import('${builtinPath}/scene-view.mjs');
@@ -38889,11 +38890,13 @@ async function execute() {
 }
 \`\`\`
 
-Step 2 \u2014 Call functions after you know the signatures:
+After you know the API, call functions directly (you can combine MULTIPLE operations in one script):
 \`\`\`
 async function execute() {
     const sv = await import('${builtinPath}/scene-view.mjs');
-    return sv.focusSceneViewOn('Main Camera');
+    const ss = await import('${builtinPath}/screenshot.mjs');
+    sv.focusSceneViewOn('Main Camera');
+    return await ss.captureSceneView();
 }
 \`\`\`
 

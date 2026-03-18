@@ -107,19 +107,20 @@ export async function initBuiltins(): Promise<void> {
           '- **`description`** — a detailed string documenting every function signature and usage.\n' +
           '- **Named functions** — the actual helper functions you can call.\n\n' +
           'To use a module, load it via ESM dynamic `import()`.\n\n' +
-          '**IMPORTANT**: The summaries below describe what each module does, but intentionally do NOT list function names or signatures. ' +
-          'You MUST first execute a script that reads the module\'s `.description` export to discover available functions and their correct parameter signatures. ' +
-          'All functions validate their arguments at runtime and will throw errors if called with wrong parameters. ' +
-          'NEVER guess or assume function names — always read `.description` first.\n\n' +
-          'Step 1 — Read description (first-time only):\n' +
+          '**IMPORTANT**: On first use of a module, read its `.description` export to see detailed function signatures. ' +
+          'After that, you already know the API — just call functions directly without re-reading `.description`.\n' +
+          'All functions validate their arguments at runtime and will throw errors if called with wrong parameters.\n\n' +
+          'First-time usage — read description:\n' +
           '```\nasync function execute() {\n' +
           `    const sv = await import('${builtinPath}/scene-view.mjs');\n` +
           '    return sv.description;\n' +
           '}\n```\n\n' +
-          'Step 2 — Call functions after you know the signatures:\n' +
+          'After you know the API, call functions directly (you can combine MULTIPLE operations in one script):\n' +
           '```\nasync function execute() {\n' +
           `    const sv = await import('${builtinPath}/scene-view.mjs');\n` +
-          '    return sv.focusSceneViewOn(\'Main Camera\');\n' +
+          `    const ss = await import('${builtinPath}/screenshot.mjs');\n` +
+          '    sv.focusSceneViewOn(\'Main Camera\');\n' +
+          '    return await ss.captureSceneView();\n' +
           '}\n```\n\n' +
           'Available modules:\n\n' +
           summaries.join('\n\n')
