@@ -9,20 +9,37 @@
 
 // ---- Summary for tool description (always in context) ----
 
-export const summary = `**maze-control** — Control the player character in the maze using compass directions. \`movePath([{dir, steps}, ...])\` to execute a planned path where steps = grid cells, \`getPlayerStatus()\` to query position and obstacle distances (in grid cells) in all 4 directions. Read \`.description\` for details.`;
+export const summary = `**maze-control** — Control the player in the maze. \`movePath([{dir, steps}, ...])\` executes a **multi-segment path** in one call (e.g. north 3 → east 2 → south 4 = 3 segments). \`getPlayerStatus()\` returns position and obstacle distances in grid cells. **Always plan the longest visible path with multiple segments per call — do NOT call movePath with only 1 segment unless at a dead end.** Read \`.description\` for details.`;
 
 // ---- Description for on-demand access via import ----
 
 export const description = `
-- **\`movePath(segments)\`** — Move the player along a planned path. Steps are in **grid cells** (each cell = 2m on the ground, shown by green grid lines).
+- **\`movePath(segments)\`** — Move the player along a **multi-segment planned path** in a single call. Steps are in **grid cells** (each cell = 2m on the ground, shown by green grid lines).
   - \`segments\` (array, required): Array of objects \`{ dir: string, steps: number }\`.
     - \`dir\`: compass direction — "north", "south", "east", or "west"
-    - \`steps\`: number of grid cells to move in that direction (1–10, integer)
-  - Example: \`movePath([{dir: "east", steps: 3}, {dir: "north", steps: 2}])\` = move east 3 cells, then north 2 cells.
+    - \`steps\`: number of grid cells **to move** (relative displacement, NOT an absolute coordinate!) (1–10, integer). E.g. if you are at column 1 and want to reach column 3, steps = 3 − 1 = **2**, not 3.
+  - **You SHOULD include 2–6 segments per call** — trace the full visible corridor through all its turns.
   - The player always lands exactly at a cell center (snaps to grid).
   - Max 20 segments per call.
   - Returns: \`{ success, stepsRequested, stepsCompleted, blocked, reachedGoal, totalDistanceMoved, position, message }\`
   - Executes each segment sequentially. Stops early if blocked by a wall or if the goal is reached.
+
+  **Multi-segment examples (THIS IS HOW YOU SHOULD USE IT):**
+  \`\`\`
+  // Trace an L-shaped corridor: north 4 cells, then turn east 3 cells
+  movePath([{dir: "north", steps: 4}, {dir: "east", steps: 3}])
+
+  // Trace a zigzag: east 2, south 3, east 1, south 2
+  movePath([{dir: "east", steps: 2}, {dir: "south", steps: 3}, {dir: "east", steps: 1}, {dir: "south", steps: 2}])
+
+  // Trace a long winding path through visible corridors
+  movePath([{dir: "north", steps: 3}, {dir: "east", steps: 1}, {dir: "north", steps: 2}, {dir: "west", steps: 4}, {dir: "south", steps: 1}])
+  \`\`\`
+
+  **❌ BAD — single segment (wastes a screenshot cycle):**
+  \`\`\`
+  movePath([{dir: "north", steps: 4}])   // You can see the turn! Why stop here?
+  \`\`\`
 
 - **\`getPlayerStatus()\`** — Get the player's current status.
   - Returns: \`{ success, position, northDistance, southDistance, eastDistance, westDistance, reachedGoal, message }\`
@@ -30,6 +47,8 @@ export const description = `
   - A distance < 0.7 cells means there is a wall immediately blocking that direction.
   - A distance ≥ 1.0 cells means the path is open for at least 1 cell.
   - Count the green grid lines in the screenshot to verify distances.
+  - **⚠️ Distances are how many cells you CAN move**, so use them directly as \`steps\`. E.g. eastDistance=3.6 → \`{dir:"east", steps:3}\`.
+  - **Common mistake**: If you are at position x=1 and want to reach x=3, you need \`steps: 2\` (= 3−1), NOT \`steps: 3\`. The \`steps\` value is how many cells to CROSS, not a target coordinate.
 
 **Direction mapping on screen (top-down view):**
 - North (+Z) = up on screen
@@ -37,9 +56,9 @@ export const description = `
 - East (+X) = right on screen
 - West (-X) = left on screen
 
-**Grid system**: The maze floor has green grid lines showing cell boundaries. Each cell is a square. The player always starts at a cell center and moves to another cell center. Count cells on the screenshot to plan distances accurately.
+**Grid system**: The maze floor has green grid lines showing cell boundaries. Each cell is a square. The player always starts at a cell center and moves to another cell center. **Count the number of grid lines you need to CROSS** (not the target grid line number) to determine \`steps\`.
 
-**Workflow**: Use \`getPlayerStatus()\` to sense which directions are open, take a screenshot to visually count how many cells are open in each corridor, then plan a multi-step path with \`movePath()\` to navigate through visible corridors.
+**Workflow**: Call \`getPlayerStatus()\` ONCE to sense immediate surroundings, take ONE screenshot to visually trace the corridor as far as you can see through ALL visible turns, then plan the ENTIRE visible path as a multi-segment \`movePath()\` call. Do NOT stop at the first corner — keep tracing.
 `.trim();
 
 // ---- Function implementations ----

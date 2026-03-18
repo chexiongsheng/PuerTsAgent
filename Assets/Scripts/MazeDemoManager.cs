@@ -29,7 +29,7 @@ namespace LLMAgent
         [Header("Maze Settings")]
         [Tooltip("The message sent to the AI to start maze exploration.")]
         [TextArea(3, 5)]
-        public string startMessage = "开始走迷宫！相机是正上方俯视角（屏幕上=北，下=南，右=东，左=西）。请先调用getPlayerStatus()获取四个方向的距离数据，再截屏观察环境。关键规则：①观察截图+距离数据，规划一条到下一个岔路口/拐角的路径，用movePath([{dir:\"north\",steps:6},{dir:\"east\",steps:4}])执行（steps=米数）；②每条路径走完后再截屏观察新环境；③如果某方向在截图中明显是死胡同，绝对不能走进去；④按右手法则选择方向；⑤即使看到红色终点标记也不要直奔过去。当reachedGoal为true时立即停止并宣布成功。";
+        public string startMessage = "红色标记是迷宫终点，走到终点。";
 
         [Header("References")]
         [Tooltip("Optional: MazeAgentUI component. If null, will try to find one in scene.")]

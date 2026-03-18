@@ -54,24 +54,6 @@ For each cycle:
    ```
 5. **Confirm**: Check the result. If `reachedGoal` is `true`, stop immediately. If `blocked` is `true`, take a new screenshot and re-plan.
 
-### ⚠️ MANDATORY: Multi-Segment Planning Rule
-
-**You MUST plan at least 2 direction segments per movePath() call.** A single-segment call like `movePath([{dir:"north",steps:4}])` is ONLY acceptable when:
-- You are at a junction and cannot see what's around the corner (need a new screenshot)
-- You are blocked on 3 sides (dead end, need to backtrack)
-
-In ALL other cases, trace the visible corridor through its turns and include ALL segments in one call. The overhead camera gives you excellent visibility — USE IT.
-
-**BAD** (wastes screenshots, too cautious):
-```
-movePath([{dir: "north", steps: 4}])  // Only 1 segment! You can see the turn at the top!
-```
-
-**GOOD** (traces the full visible path):
-```
-movePath([{dir: "north", steps: 4}, {dir: "east", steps: 2}, {dir: "south", steps: 3}])  // 3 segments covering the full visible corridor
-```
-
 **NOTE**: For ALL movement, use `movePath()`. The format is `movePath([{dir: "direction", steps: gridCells}, ...])`. Steps are **integer grid cells** (1–10). This is the only movement function available.
 
 ## Navigation Rules
