@@ -4,21 +4,35 @@
 
 ## 概述
 
-在本框架中，一个智能体的行为和能力完全由一个**资源目录**（Resource Root）下的文件定义。不同的资源目录代表不同的智能体——可以是 Unity 编辑器助手、游戏内 NPC、或任何你需要的角色。
+在本框架中，一个智能体的行为和能力完全由一个**资源目录**（Resource Root）下的文件定义。不同的资源目录代表不同的智能体——可以是 Unity 编辑器助手、游戏内 AI 角色、或任何你需要的角色。
 
-## 目录结构
+## 创建智能体
 
-以内置的 `editor-assistant` 为例，一个智能体的资源目录结构如下：
+在 C# 代码中，通过资源路径初始化一个智能体。以随项目附带的 **Maze Runner** Demo 为例：
+
+```csharp
+var agent = new AgentScriptManager();
+agent.Initialize("maze-runner", () =>
+{
+    Debug.Log("Maze runner agent is ready!");
+});
+```
+
+`Initialize` 的第一个参数是 Unity `Resources/` 下的资源目录路径。框架会从该目录加载智能体的全部定义，包括：
+
+- **`system-prompt.md.txt`** — 角色定义（System Prompt）
+- **`skills/`** — 领域技能文档（按需加载，可选）
+- **`builtins/`** — 内置辅助模块（可执行的 JS 模块）
+
+`maze-runner` 的完整目录结构如下：
 
 ```
-Resources/LLMAgent/editor-assistant/
+Resources/maze-runner/
 ├── system-prompt.md.txt          # 角色定义（System Prompt）
-├── skills/                       # 领域技能（按需加载）
-│   └── puerts-interop.md.txt
+├── skills/                       # 领域技能（按需加载，可选）
 └── builtins/                     # 内置模块（按需加载）
-    ├── scene-view.mjs
-    ├── type-reflection.mjs
-    └── unity-log.mjs
+    ├── maze-control.mjs          # 迷宫移动与状态查询
+    └── screenshot.mjs            # 截屏观察迷宫
 ```
 
 所有资源文件放在 Unity 的 `Resources/` 目录下。
@@ -26,6 +40,8 @@ Resources/LLMAgent/editor-assistant/
 > **文件后缀约定**：Unity `Resources` 不支持 `.md` 和 `.mjs` 作为 TextAsset，因此：
 > - Markdown 文件使用 `.md.txt` 后缀
 > - JS 模块文件使用 `.mjs` 后缀
+
+下面依次介绍这三类文件的编写方式。
 
 ---
 
@@ -53,16 +69,24 @@ Resources/LLMAgent/editor-assistant/
 You are a helpful AI assistant running inside Unity via PuerTS (a TypeScript/JavaScript runtime for Unity). You can help with game development, scripting, and general questions. Be concise and practical.
 ```
 
-**游戏 NPC 示例**（`game-npc/system-prompt.md.txt`）：
+**迷宫 AI 示例**（`maze-runner/system-prompt.md.txt`，节选）：
 
 ```markdown
-You are a wise old merchant named Eldric in a fantasy RPG world. You speak in a formal, slightly archaic tone. You can help the player by:
-- Providing information about items, quests, and lore
-- Offering trade suggestions based on the player's inventory
-- Giving hints about nearby dungeons and hidden treasures
+You are a Maze Explorer AI — an intelligent agent that navigates through 3D mazes by observing, reasoning, and acting.
 
-Stay in character at all times. Never break the fourth wall or mention that you are an AI.
+## Your Capabilities
+
+You can control a player character in a 3D maze using two builtin modules:
+- **maze-control**: Move in compass directions (north/south/east/west) with `movePath()` and query obstacle distances with `getPlayerStatus()`
+- **screenshot**: Capture the game view to visually observe the maze
+
+## Goal Description
+
+Your goal is to reach the **maze exit marker** — a tall RED pillar with a bright RED glowing ring.
+...
 ```
+
+> System Prompt 中描述了 AI 的身份、可用模块、目标、探索循环、导航规则等完整的行为准则。篇幅可以较长——它定义了 AI 在整个任务中的行为模式。
 
 ---
 
@@ -189,12 +213,12 @@ export function getUnityLogs(count: number = 20, logType: string = 'all'): LogEn
 
 ## 4. 完整开发流程
 
-以创建一个名为 `game-npc` 的游戏 NPC 智能体为例：
+以 **Maze Runner** 迷宫 AI 智能体为例：
 
 ### Step 1：创建资源目录
 
 ```
-PuertsAgent/Resources/LLMAgent/game-npc/
+Resources/maze-runner/
 ├── system-prompt.md.txt
 ├── skills/
 └── builtins/
@@ -202,68 +226,59 @@ PuertsAgent/Resources/LLMAgent/game-npc/
 
 ### Step 2：编写角色定义
 
-编辑 `system-prompt.md.txt`，定义 NPC 的身份和行为准则。
+编辑 `system-prompt.md.txt`，定义 AI 的身份和行为准则。例如迷宫 AI 需要描述：
+- 角色身份（迷宫探索者）
+- 可用模块（maze-control, screenshot）
+- 目标（到达红色终点标记）
+- 探索循环（观察 → 规划 → 行动）
+- 导航策略（右手法则、死胡同检测等）
 
 ### Step 3：编写领域技能（可选）
 
 在 `skills/` 目录下创建 `.md.txt` 文件，添加 YAML front-matter 和技能内容。
 
-例如 `skills/inventory-system.md.txt`：
+> 迷宫 Demo 没有使用 skill 文件——所有导航规则直接写在 system-prompt 中。当领域知识较多且不需要每次都加载时，拆分为 skill 更合适。
 
-```markdown
----
-name: inventory-system
-description: "Game inventory system rules: item types, rarity, trade mechanics, crafting recipes"
----
+### Step 4：编写辅助模块
 
-## Inventory System Guide
+编写 Builtin 模块源文件，编译后将 `.mjs` 产物放到 `Resources/maze-runner/builtins/` 下。
 
-### Item Rarity Levels
-- Common (white) → Uncommon (green) → Rare (blue) → Epic (purple) → Legendary (gold)
-
-### Trade Rules
-- NPCs buy items at 50% of base value
-- ...
-```
-
-### Step 4：编写辅助模块（可选）
-
-编写 Builtin 模块源文件，编译后将 `.mjs` 产物放到 `Resources/LLMAgent/game-npc/builtins/` 下。
-
-例如 `inventory-helper`（以 TypeScript 源码形式展示）：
+迷宫 Demo 有两个 Builtin 模块：`maze-control`（移动和状态查询）和 `screenshot`（截屏观察）。以 `maze-control` 为例（TypeScript 源码，节选）：
 
 ```typescript
-export const summary = `**inventory-helper** — Query and manage player inventory. Read \`.description\` for function signatures.`;
+export const summary = `**maze-control** — Control the player in the maze. \`movePath([{dir, steps}, ...])\` executes a multi-segment path. \`getPlayerStatus()\` returns position and obstacle distances. Read \`.description\` for details.`;
 
 export const description = `
-- **\`getPlayerInventory()\`** — Returns the current player's inventory as an array of items.
-- **\`getItemInfo(itemId)\`** — Returns detailed info about a specific item by ID.
+- **\`movePath(segments)\`** — Move the player along a multi-segment planned path.
+  - \`segments\` (array): Array of \`{ dir: string, steps: number }\`.
+  - Returns: \`{ success, stepsCompleted, blocked, reachedGoal, position, message }\`
+- **\`getPlayerStatus()\`** — Get the player's position and obstacle distances.
+  - Returns: \`{ position, northDistance, southDistance, eastDistance, westDistance, reachedGoal }\`
 `.trim();
 
-export function getPlayerInventory() {
-    const json = CS.GameNPC.InventoryBridge.GetInventoryJson();
-    return JSON.parse(json);
+export async function movePath(segments: PathSegment[]): Promise<MoveSequenceResult> {
+    // Parameter validation...
+    const directionsJson = JSON.stringify(segments.map(s => s.dir));
+    const distancesJson = JSON.stringify(segments.map(s => s.steps));
+    const resultJson = await new Promise<string>((resolve, reject) => {
+        CS.LLMAgent.MazePlayerBridge.MoveSequenceV2(directionsJson, distancesJson, (json: string) => resolve(json));
+    });
+    return JSON.parse(resultJson);
 }
 
-export function getItemInfo(itemId: string) {
-    if (typeof itemId !== 'string' || !itemId) {
-        throw new Error(`getItemInfo: 'itemId' must be a non-empty string. Read module.description for usage.`);
-    }
-    const json = CS.GameNPC.InventoryBridge.GetItemInfoJson(itemId);
-    return JSON.parse(json);
+export async function getPlayerStatus(): Promise<PlayerStatusResult> {
+    const resultJson = await new Promise<string>((resolve, reject) => {
+        CS.LLMAgent.MazePlayerBridge.GetPlayerStatus((json: string) => resolve(json));
+    });
+    return JSON.parse(resultJson);
 }
 ```
 
-### Step 5
-在 C# 代码中，用对应的资源路径初始化智能体：
+> Builtin 模块通过 `CS.*` 全局对象调用 C# 桥接层。桥接类（如 `MazePlayerBridge`）需要提前在 Unity 侧实现。
 
-```csharp
-var agent = new AgentScriptManager();
-agent.Initialize("LLMAgent/game-npc", () =>
-{
-    Debug.Log("Game NPC agent is ready!");
-});
-```
+### Step 5：初始化智能体
+
+在 C# 代码中，用对应的资源路径初始化智能体（参见本文开头「创建智能体」一节）。
 
 ---
 
